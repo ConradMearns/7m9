@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>scan_and_upload — Feature Whiteboard</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --color-cmd:  #93C5FD;
+      --color-evt:  #86EFAC;
+      --color-proc: #FCA34D;
+      --color-pol:  #F9A8D4;
+      --border-cmd: #2563EB;
+      --border-evt: #16A34A;
+      --border-proc:#EA580C;
+      --border-pol: #DB2777;
+      --font: 'Share Tech Mono', 'Courier New', monospace;
+      --toolbar-h: 48px;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: var(--font);
+      background: #f8fafc;
+    }
+
+    /* ── Toolbar ── */
+    #toolbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: var(--toolbar-h);
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 12px;
+      z-index: 200;
+      border-bottom: 1px solid #334155;
+    }
+
+    #toolbar .back-link {
+      color: #94a3b8;
+      text-decoration: none;
+      font-size: 12px;
+      white-space: nowrap;
+      padding: 4px 8px;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    #toolbar .back-link:hover { color: #e2e8f0; border-color: #64748b; }
+
+    #toolbar .title {
+      color: #e2e8f0;
+      font-size: 13px;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #btn-fit {
+      background: none;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      font-family: var(--font);
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    #btn-fit:hover { color: #e2e8f0; border-color: #64748b; }
+
+    /* ── Canvas ── */
+    #cy {
+      position: fixed;
+      top: var(--toolbar-h);
+      left: 0; right: 0; bottom: 0;
+      touch-action: none;
+      background-color: #f8fafc;
+      background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+
+    /* ── Legend ── */
+    #legend {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(4px);
+      border-radius: 12px;
+      padding: 8px 14px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+      z-index: 200;
+      max-width: calc(100vw - 32px);
+    }
+
+    .legend-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-family: var(--font);
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 2px solid transparent;
+      white-space: nowrap;
+      cursor: default;
+    }
+    .legend-chip.cmd  { background: var(--color-cmd);  border-color: var(--border-cmd); }
+    .legend-chip.evt  { background: var(--color-evt);  border-color: var(--border-evt); }
+    .legend-chip.proc { background: var(--color-proc); border-color: var(--border-proc); }
+    .legend-chip.pol  { background: var(--color-pol);  border-color: var(--border-pol); }
+
+    /* ── Detail panel (tap/click a node) ── */
+    #detail-panel {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: rgba(15, 23, 42, 0.96);
+      backdrop-filter: blur(6px);
+      padding: 20px 20px 28px;
+      z-index: 300;
+      border-top: 1px solid #334155;
+      transform: translateY(100%);
+      transition: transform 0.25s ease;
+    }
+    #detail-panel.open { transform: translateY(0); }
+
+    #detail-panel .type-chip {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid currentColor;
+      margin-bottom: 10px;
+      font-family: var(--font);
+    }
+    #detail-panel h3 {
+      color: #f1f5f9;
+      font-family: var(--font);
+      font-size: 14px;
+      margin-bottom: 8px;
+      word-break: break-word;
+    }
+    #detail-panel p {
+      color: #94a3b8;
+      font-family: var(--font);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    #detail-close {
+      position: absolute;
+      top: 14px; right: 16px;
+      background: none;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      font-family: var(--font);
+      font-size: 14px;
+      width: 28px;
+      height: 28px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #detail-close:hover { color: #e2e8f0; border-color: #64748b; }
+  </style>
+</head>
+<body>
+
+  <div id="toolbar">
+    <a class="back-link" href="index.html">← Terminal</a>
+    <span class="title">scan_and_upload / Feature Flow</span>
+    <button id="btn-fit">[ FIT ]</button>
+  </div>
+
+  <div id="cy"></div>
+
+  <div id="legend">
+    <div class="legend-chip cmd">Command</div>
+    <div class="legend-chip evt">Event</div>
+    <div class="legend-chip proc">Procedure</div>
+    <div class="legend-chip pol">Policy</div>
+  </div>
+
+  <div id="detail-panel">
+    <button id="detail-close">×</button>
+    <div id="detail-type" class="type-chip"></div>
+    <h3 id="detail-title"></h3>
+    <p id="detail-desc"></p>
+  </div>
+
+  <!-- 1. dagre layout engine (must load before cytoscape-dagre) -->
+  <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+  <!-- 2. Cytoscape core -->
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.28.0/dist/cytoscape.min.js"></script>
+  <!-- 3. cytoscape-dagre plugin -->
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+
+  <script>
+    // ── Data ────────────────────────────────────────────────────────────────
+    const NODES = [
+      // Commands (blue)
+      { data: { id: 'cmd:start_scan',
+          label: 'start_scan',
+          type: 'cmd', typeName: 'Command',
+          desc: 'Initiates a scan to discover files.' } },
+      { data: { id: 'cmd:create_image_priority_manifest',
+          label: 'create_image\npriority_manifest',
+          type: 'cmd', typeName: 'Command',
+          desc: 'Creates a prioritized manifest for upload.' } },
+      { data: { id: 'cmd:upload_blob_using_manifest',
+          label: 'upload_blob\nusing_manifest',
+          type: 'cmd', typeName: 'Command',
+          desc: 'Uploads a blob using manifest information.' } },
+
+      // Events (green)
+      { data: { id: 'evt:scan_item_found',
+          label: 'scan_item_found',
+          type: 'evt', typeName: 'Event',
+          desc: 'Found a file (not folder) while scanning.' } },
+      { data: { id: 'evt:scan_complete',
+          label: 'scan_complete',
+          type: 'evt', typeName: 'Event',
+          desc: 'Finished scanning.' } },
+      { data: { id: 'evt:scan_item_failed',
+          label: 'scan_item_failed',
+          type: 'evt', typeName: 'Event',
+          desc: 'Something went wrong reading a single item.' } },
+      { data: { id: 'evt:priority_manifest_created',
+          label: 'priority_manifest\ncreated',
+          type: 'evt', typeName: 'Event',
+          desc: 'Prioritized manifest successfully created.' } },
+      { data: { id: 'evt:manifest_upload_started',
+          label: 'manifest_upload\nstarted',
+          type: 'evt', typeName: 'Event',
+          desc: 'Upload has started for a manifest item.' } },
+
+      // Procedures (orange)
+      { data: { id: 'proc:partition_scan',
+          label: 'partition_scan',
+          type: 'proc', typeName: 'Procedure',
+          desc: 'Recursively scans directory, hashes each file with SHA256, and emits scan events for each item found or failed, then emits scan_complete.' } },
+      { data: { id: 'proc:filter_manifest_by_path_type',
+          label: 'filter_manifest\nby_path_type',
+          type: 'proc', typeName: 'Procedure',
+          desc: 'Filters manifest by path type to create image priority manifest.' } },
+      { data: { id: 'proc:begin_manifest_upload',
+          label: 'begin_manifest\nupload',
+          type: 'proc', typeName: 'Procedure',
+          desc: 'Actually does the uploading and records that upload started.' } },
+
+      // Policies (pink)
+      { data: { id: 'pol:update_partition_manifest',
+          label: 'update_partition\nmanifest',
+          type: 'pol', typeName: 'Policy',
+          desc: 'Updates partition manifest when scan items are found.' } },
+      { data: { id: 'pol:create_image_priority_manifest',
+          label: 'create_image\npriority_manifest',
+          type: 'pol', typeName: 'Policy',
+          desc: 'Issues command to create image priority manifest when scan completes.' } },
+      { data: { id: 'pol:start_manifest_upload',
+          label: 'start_manifest\nupload',
+          type: 'pol', typeName: 'Policy',
+          desc: 'Unwraps manifest list and generates upload commands for each item.' } },
+    ];
+
+    const EDGES = [
+      // Command → Procedure (triggers)
+      { data: { source: 'cmd:start_scan',                      target: 'proc:partition_scan',               label: 'triggers' } },
+      { data: { source: 'cmd:create_image_priority_manifest',  target: 'proc:filter_manifest_by_path_type', label: 'triggers' } },
+      { data: { source: 'cmd:upload_blob_using_manifest',      target: 'proc:begin_manifest_upload',        label: 'triggers' } },
+
+      // Procedure → Event (emits)
+      { data: { source: 'proc:partition_scan',              target: 'evt:scan_item_found',         label: 'emits' } },
+      { data: { source: 'proc:partition_scan',              target: 'evt:scan_complete',           label: 'emits' } },
+      { data: { source: 'proc:partition_scan',              target: 'evt:scan_item_failed',        label: 'emits' } },
+      { data: { source: 'proc:filter_manifest_by_path_type', target: 'evt:priority_manifest_created', label: 'emits' } },
+      { data: { source: 'proc:begin_manifest_upload',       target: 'evt:manifest_upload_started', label: 'emits' } },
+
+      // Event → Policy (handled by)
+      { data: { source: 'evt:scan_item_found',          target: 'pol:update_partition_manifest',      label: 'handled by' } },
+      { data: { source: 'evt:scan_complete',            target: 'pol:create_image_priority_manifest', label: 'handled by' } },
+      { data: { source: 'evt:priority_manifest_created', target: 'pol:start_manifest_upload',          label: 'handled by' } },
+
+      // Policy → Command (cycle back, emits)
+      { data: { source: 'pol:create_image_priority_manifest', target: 'cmd:create_image_priority_manifest', label: 'emits', cycle: true } },
+      { data: { source: 'pol:start_manifest_upload',          target: 'cmd:upload_blob_using_manifest',     label: 'emits', cycle: true } },
+    ];
+
+    // ── Color map ────────────────────────────────────────────────────────────
+    const COLORS = {
+      cmd:  { bg: '#93C5FD', border: '#2563EB', text: '#1e3a5f' },
+      evt:  { bg: '#86EFAC', border: '#16A34A', text: '#14532d' },
+      proc: { bg: '#FCA34D', border: '#EA580C', text: '#431407' },
+      pol:  { bg: '#F9A8D4', border: '#DB2777', text: '#500724' },
+    };
+
+    // ── Cytoscape init ───────────────────────────────────────────────────────
+    const cy = cytoscape({
+      container: document.getElementById('cy'),
+      elements: [...NODES, ...EDGES],
+
+      style: [
+        {
+          selector: 'node',
+          style: {
+            'shape': 'rectangle',
+            'width': 150,
+            'height': 90,
+            'label': 'data(label)',
+            'text-wrap': 'wrap',
+            'text-max-width': 130,
+            'font-size': 11,
+            'font-family': "'Share Tech Mono', 'Courier New', monospace",
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'border-width': 2,
+            'border-style': 'solid',
+            'shadow-blur': 6,
+            'shadow-color': 'rgba(0,0,0,0.2)',
+            'shadow-offset-x': 3,
+            'shadow-offset-y': 3,
+            'shadow-opacity': 0.5,
+            'transition-property': 'border-width, shadow-blur',
+            'transition-duration': '0.15s',
+          }
+        },
+        {
+          selector: 'node:active, node.highlighted',
+          style: {
+            'border-width': 3,
+            'shadow-blur': 14,
+            'shadow-opacity': 0.8,
+          }
+        },
+
+        // Per-type colors
+        { selector: 'node[type="cmd"]',  style: { 'background-color': '#93C5FD', 'border-color': '#2563EB', 'color': '#1e3a5f' } },
+        { selector: 'node[type="evt"]',  style: { 'background-color': '#86EFAC', 'border-color': '#16A34A', 'color': '#14532d' } },
+        { selector: 'node[type="proc"]', style: { 'background-color': '#FCA34D', 'border-color': '#EA580C', 'color': '#431407' } },
+        { selector: 'node[type="pol"]',  style: { 'background-color': '#F9A8D4', 'border-color': '#DB2777', 'color': '#500724' } },
+
+        // Edges
+        {
+          selector: 'edge',
+          style: {
+            'curve-style': 'bezier',
+            'target-arrow-shape': 'triangle',
+            'target-arrow-fill': 'filled',
+            'arrow-scale': 1.2,
+            'line-color': '#94a3b8',
+            'target-arrow-color': '#94a3b8',
+            'width': 1.5,
+            'label': 'data(label)',
+            'font-size': 9,
+            'font-family': "'Share Tech Mono', 'Courier New', monospace",
+            'color': '#64748b',
+            'text-background-color': '#f8fafc',
+            'text-background-opacity': 0.85,
+            'text-background-padding': '2px',
+            'text-rotation': 'autorotate',
+          }
+        },
+        // Cycle-back edges (policy → command) — dashed orange
+        {
+          selector: 'edge[?cycle]',
+          style: {
+            'line-style': 'dashed',
+            'line-dash-pattern': [6, 4],
+            'line-color': '#f97316',
+            'target-arrow-color': '#f97316',
+            'color': '#ea580c',
+          }
+        },
+      ],
+
+      userZoomingEnabled: true,
+      userPanningEnabled: true,
+      boxSelectionEnabled: false,
+      autoungrabify: true,
+      minZoom: 0.15,
+      maxZoom: 4,
+      wheelSensitivity: 0.3,
+    });
+
+    // Run dagre layout
+    cy.layout({
+      name: 'dagre',
+      rankDir: 'TB',
+      ranker: 'network-simplex',
+      nodeSep: 50,
+      rankSep: 70,
+      edgeSep: 10,
+      padding: 60,
+      animate: false,
+      fit: true,
+    }).run();
+
+    // ── Fit button ───────────────────────────────────────────────────────────
+    document.getElementById('btn-fit').addEventListener('click', () => {
+      cy.fit(cy.elements(), 60);
+    });
+
+    // ── Detail panel ─────────────────────────────────────────────────────────
+    const panel     = document.getElementById('detail-panel');
+    const panelType = document.getElementById('detail-type');
+    const panelTitle= document.getElementById('detail-title');
+    const panelDesc = document.getElementById('detail-desc');
+    const panelClose= document.getElementById('detail-close');
+
+    function openPanel(node) {
+      const type = node.data('type');
+      const c = COLORS[type] || {};
+      panelType.textContent = node.data('typeName');
+      panelType.style.color = c.border || '#64748b';
+      panelTitle.textContent = node.data('id').split(':')[1];
+      panelDesc.textContent = node.data('desc');
+      panel.classList.add('open');
+    }
+
+    function closePanel() {
+      panel.classList.remove('open');
+      cy.elements().removeClass('highlighted');
+    }
+
+    cy.on('tap', 'node', function(evt) {
+      cy.elements().removeClass('highlighted');
+      evt.target.addClass('highlighted');
+      openPanel(evt.target);
+    });
+
+    cy.on('tap', function(evt) {
+      if (evt.target === cy) closePanel();
+    });
+
+    panelClose.addEventListener('click', closePanel);
+
+    // Desktop hover tooltip via detail panel
+    cy.on('mouseover', 'node', function(evt) {
+      evt.target.addClass('highlighted');
+    });
+    cy.on('mouseout', 'node', function(evt) {
+      if (!panel.classList.contains('open')) {
+        evt.target.removeClass('highlighted');
+      }
+    });
+  </script>
+</body>
+</html>
