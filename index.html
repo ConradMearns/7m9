@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>7M9 // TERMINAL v1.0</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --phosphor: #33ff33;
+      --phosphor-dim: #1a7a1a;
+      --phosphor-glow: #00ff4488;
+      --amber: #ffb000;
+      --bg: #0a0a0a;
+      --screen-bg: #010f01;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #111;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      font-family: 'Share Tech Mono', 'Courier New', monospace;
+    }
+
+    /* ── CRT BEZEL ── */
+    .bezel {
+      position: relative;
+      width: min(900px, 96vw);
+      aspect-ratio: 4 / 3;
+      background: radial-gradient(ellipse at center, #2a2a2a 0%, #111 60%, #0a0a0a 100%);
+      border-radius: 24px / 18px;
+      box-shadow:
+        0 0 0 3px #3a3a3a,
+        0 0 0 6px #222,
+        0 0 40px 4px #000,
+        inset 0 0 60px rgba(0,0,0,0.8);
+      padding: 28px 32px 48px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* brand on bezel */
+    .bezel-brand {
+      text-align: center;
+      color: #555;
+      font-size: 0.55rem;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      user-select: none;
+    }
+
+    /* ── SCREEN ── */
+    .screen {
+      flex: 1;
+      position: relative;
+      background: var(--screen-bg);
+      border-radius: 10px / 8px;
+      overflow: hidden;
+      box-shadow:
+        inset 0 0 80px rgba(0, 255, 50, 0.04),
+        inset 0 0 20px rgba(0,0,0,0.6),
+        0 0 30px rgba(0, 255, 50, 0.15);
+    }
+
+    /* phosphor glow layer */
+    .screen::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 50% 40%,
+        rgba(0, 255, 60, 0.07) 0%,
+        rgba(0, 255, 60, 0.03) 50%,
+        transparent 80%);
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    /* scanlines */
+    .screen::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 3px,
+        rgba(0, 0, 0, 0.18) 3px,
+        rgba(0, 0, 0, 0.18) 4px
+      );
+      pointer-events: none;
+      z-index: 4;
+    }
+
+    /* vignette */
+    .vignette {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at center,
+        transparent 55%,
+        rgba(0,0,0,0.55) 100%);
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    /* RGB noise canvas */
+    #noise {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0.035;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    /* ── TERMINAL CONTENT ── */
+    .terminal {
+      position: relative;
+      z-index: 6;
+      padding: 20px 22px;
+      height: 100%;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .line {
+      color: var(--phosphor);
+      font-size: clamp(0.55rem, 1.5vw, 0.82rem);
+      line-height: 1.55;
+      text-shadow:
+        0 0 6px var(--phosphor-glow),
+        0 0 12px rgba(0, 255, 60, 0.25);
+      white-space: pre;
+      min-height: 1.55em;
+      opacity: 0;
+      transition: opacity 0.05s;
+    }
+
+    .line.visible { opacity: 1; }
+
+    .line.dim {
+      color: var(--phosphor-dim);
+      text-shadow: none;
+    }
+
+    .line.amber {
+      color: var(--amber);
+      text-shadow: 0 0 8px rgba(255, 176, 0, 0.5);
+    }
+
+    .line.bright {
+      color: #fff;
+      text-shadow: 0 0 8px rgba(255,255,255,0.4);
+    }
+
+    .line.gap { margin-top: 0.4em; }
+
+    /* cursor */
+    #cursor {
+      display: inline-block;
+      width: 0.55em;
+      height: 1em;
+      background: var(--phosphor);
+      box-shadow: 0 0 8px var(--phosphor-glow);
+      vertical-align: text-bottom;
+      animation: blink 1.1s step-end infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+
+    /* flicker animation */
+    .screen {
+      animation: flicker 0.15s infinite;
+    }
+
+    @keyframes flicker {
+      0%   { opacity: 1; }
+      92%  { opacity: 1; }
+      93%  { opacity: 0.96; }
+      94%  { opacity: 1; }
+      96%  { opacity: 0.98; }
+      100% { opacity: 1; }
+    }
+
+    /* power-on sweep */
+    .power-sweep {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to bottom, #ffffff22, transparent 8%);
+      transform: translateY(-100%);
+      animation: sweep 1.2s cubic-bezier(.4,0,.6,1) forwards;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    @keyframes sweep {
+      0%   { transform: translateY(-100%); opacity: 1; }
+      80%  { opacity: 0.6; }
+      100% { transform: translateY(110%); opacity: 0; }
+    }
+
+    /* status bar */
+    .statusbar {
+      position: absolute;
+      bottom: 6px;
+      left: 22px;
+      right: 22px;
+      display: flex;
+      justify-content: space-between;
+      color: var(--phosphor-dim);
+      font-size: clamp(0.42rem, 1vw, 0.6rem);
+      text-shadow: none;
+      z-index: 7;
+      user-select: none;
+    }
+
+    #clock { color: var(--phosphor-dim); }
+
+    /* bezel bottom knobs */
+    .knobs {
+      display: flex;
+      justify-content: center;
+      gap: 18px;
+      margin-top: 10px;
+    }
+    .knob {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, #555, #1a1a1a);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.8);
+    }
+  </style>
+</head>
+<body>
+
+<div class="bezel">
+  <div class="bezel-brand">SYNTH-TEC &nbsp;|&nbsp; MODEL 7M9 &nbsp;|&nbsp; VDT-84</div>
+
+  <div class="screen" id="screen">
+    <div class="power-sweep"></div>
+    <canvas id="noise"></canvas>
+    <div class="vignette"></div>
+
+    <div class="terminal" id="terminal">
+      <!-- lines injected by JS -->
+      <div class="statusbar">
+        <span id="mem">MEM: 640K&nbsp;&nbsp;OK</span>
+        <span id="clock"></span>
+        <span>BAUD: 9600</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="knobs">
+    <div class="knob"></div>
+    <div class="knob"></div>
+    <div class="knob"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ── NOISE CANVAS ── */
+  const canvas = document.getElementById('noise');
+  const ctx    = canvas.getContext('2d');
+
+  function resizeNoise () {
+    canvas.width  = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+  }
+  resizeNoise();
+  window.addEventListener('resize', resizeNoise);
+
+  function drawNoise () {
+    const w = canvas.width, h = canvas.height;
+    const img = ctx.createImageData(w, h);
+    const d   = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = Math.random() * 255 | 0;
+      d[i] = d[i+1] = d[i+2] = v;
+      d[i+3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    requestAnimationFrame(drawNoise);
+  }
+  drawNoise();
+
+  /* ── CLOCK ── */
+  const clockEl = document.getElementById('clock');
+  function updateClock () {
+    const n = new Date();
+    const p = v => String(v).padStart(2, '0');
+    clockEl.textContent = `${p(n.getHours())}:${p(n.getMinutes())}:${p(n.getSeconds())}`;
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  /* ── SCRIPT LINES ── */
+  const ASCII_LOGO = [
+    '  ██████╗ ███╗   ███╗ █████╗ ',
+    ' ██╔════╝ ████╗ ████║██╔══██╗',
+    ' ███████╗ ██╔████╔██║╚██████║',
+    ' ╚════██║ ██║╚██╔╝██║ ╚═══██║',
+    ' ███████║ ██║ ╚═╝ ██║ █████╔╝',
+    ' ╚══════╝ ╚═╝     ╚═╝ ╚════╝ ',
+  ];
+
+  // Each entry: [text, className, delayAfter(ms)]
+  const SCRIPT = [
+    ['SYNTH-TEC BIOS v3.1  (C) 1984 SYNTH-TEC CORP.',                 'dim',    60],
+    ['Copyright (C) 1984–1987  All rights reserved.',                  'dim',    60],
+    ['',                                                                '',       40],
+    ['Memory test: 0K ... 256K ... 512K ... 640K  [OK]',               'dim',   120],
+    ['Checking drive A: ........  [OK]',                                'dim',    80],
+    ['Loading OS kernel  ................  [OK]',                       'dim',    80],
+    ['',                                                                '',       30],
+    ['SynthDOS 2.4  Kernel loaded.',                                    '',       60],
+    ['',                                                                '',       80],
+    // ASCII art — amber
+    ...ASCII_LOGO.map((l, i) => [l, 'amber', i === ASCII_LOGO.length - 1 ? 80 : 30]),
+    ['',                                                                '',       60],
+    ['══════════════════════════════════════════════════════',          'dim',    40],
+    ['   W E L C O M E   T O   T H E   G R I D ',                     'bright', 80],
+    ['══════════════════════════════════════════════════════',          'dim',    60],
+    ['',                                                                '',       40],
+    ['  > System:   7M9 Terminal Node v1.0',                           '',       55],
+    ['  > Uptime:   0d 00:00:01',                                       '',       55],
+    ['  > Status:   ALL SYSTEMS NOMINAL',                               '',       55],
+    ['  > Network:  SYNTHNET backbone — CONNECTED',                     '',       55],
+    ['',                                                                '',       50],
+    ['  Initializing user session...',                                  'dim',    90],
+    ['  Loading personality matrix...    ██████████  100%', 'dim',    90],
+    ['',                                                                '',       50],
+    ['  ACCESS GRANTED.',                                               'amber', 100],
+    ['',                                                                '',       50],
+    ['  Hello, OPERATOR.  The system is yours.',                        '',       70],
+    ['  Type HELP for command reference.',                              '',       70],
+    ['',                                                                '',       60],
+    ['C:\\>',                                                            '',         0],
+  ];
+
+  /* ── TYPE WRITER ── */
+  const terminal = document.getElementById('terminal');
+  const statusbar = terminal.querySelector('.statusbar');
+
+  // cursor element (injected after last line)
+  const cursorEl = document.createElement('span');
+  cursorEl.id = 'cursor';
+
+  let lineIndex = 0;
+  let charIndex = 0;
+  let currentLineEl = null;
+  let currentText = '';
+
+  function nextLine () {
+    if (lineIndex >= SCRIPT.length) {
+      // done — attach cursor
+      if (currentLineEl) currentLineEl.appendChild(cursorEl);
+      return;
+    }
+
+    const [text, cls, delay] = SCRIPT[lineIndex++];
+
+    currentLineEl = document.createElement('div');
+    currentLineEl.className = 'line' + (cls ? ' ' + cls : '');
+    // insert before statusbar
+    terminal.insertBefore(currentLineEl, statusbar);
+
+    currentText = text;
+    charIndex   = 0;
+
+    typeChar(delay);
+  }
+
+  function typeChar (delayAfter) {
+    if (charIndex <= currentText.length) {
+      currentLineEl.textContent = currentText.slice(0, charIndex);
+      currentLineEl.classList.add('visible');
+      charIndex++;
+      // vary speed: fast for regular chars, instant for spaces/empty lines
+      const speed = currentText.length === 0 ? 0 :
+                    currentText.trim() === ''  ? 5  :
+                    8 + Math.random() * 14;
+      setTimeout(() => typeChar(delayAfter), speed);
+    } else {
+      // line done
+      setTimeout(nextLine, delayAfter);
+      // auto-scroll
+      terminal.scrollTop = terminal.scrollHeight;
+    }
+  }
+
+  // start after power-sweep (1.2s)
+  setTimeout(nextLine, 1300);
+
+  /* ── RANDOM GLITCH ── */
+  const screen = document.getElementById('screen');
+
+  function scheduleGlitch () {
+    const wait = 4000 + Math.random() * 8000;
+    setTimeout(() => {
+      glitch();
+      scheduleGlitch();
+    }, wait);
+  }
+
+  function glitch () {
+    const duration = 80 + Math.random() * 120;
+    screen.style.transform = `skewX(${(Math.random() - 0.5) * 0.6}deg)`;
+    screen.style.filter    = `brightness(1.3) hue-rotate(${Math.random() * 20}deg)`;
+    setTimeout(() => {
+      screen.style.transform = '';
+      screen.style.filter    = '';
+    }, duration);
+  }
+
+  scheduleGlitch();
+})();
+</script>
+</body>
+</html>
