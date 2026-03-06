@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChronicleDB — Vanilla JS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #060910;
+      --surface:  #0c1018;
+      --elevated: #111827;
+      --border:   #1a2332;
+      --muted:    #374151;
+      --dim:      #1f2937;
+      --mono: 'IBM Plex Mono', 'Fira Code', monospace;
+      --ui:   'IBM Plex Sans', 'DM Sans', system-ui, sans-serif;
+    }
+
+    body { background: var(--bg); color: #e2e8f0; font-family: var(--ui); }
+
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 2px; }
+
+    .scanline {
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px);
+      pointer-events: none;
+      position: fixed; inset: 0; z-index: 999;
+    }
+
+    /* Layout */
+    #app { display: flex; flex-direction: column; min-height: 100vh; }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 20px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .logo { display: flex; align-items: center; gap: 10px; }
+    .logo-name { font-family: var(--mono); font-weight: 600; font-size: 14px; letter-spacing: .08em; color: #c7d2fe; }
+    .logo-sub  { font-family: var(--mono); font-size: 9px; color: #4b5563; letter-spacing: .15em; }
+
+    .spacer { flex: 1; }
+
+    .metrics { display: flex; gap: 14px; align-items: center; }
+    .metric { text-align: right; }
+    .metric-label { font-family: var(--mono); font-size: 8px; color: #374151; letter-spacing: .15em; display: block; }
+    .metric-value { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+    .sep { width: 1px; height: 20px; background: var(--border); }
+
+    .body { flex: 1; display: flex; overflow: hidden; height: calc(100vh - 52px); }
+
+    /* Sidebar */
+    aside {
+      width: 300px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .section { padding: 14px 14px 0; }
+    .section-label { font-family: var(--mono); font-size: 9px; letter-spacing: .18em; color: #374151; }
+
+    /* Node cards */
+    #nodes-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+
+    .node-card {
+      border-radius: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      transition: border-color .4s, box-shadow .4s;
+    }
+    .node-card:hover { border-color: #374151 !important; }
+
+    .node-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .node-left   { display: flex; align-items: center; gap: 8px; }
+
+    .pulse-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      animation: pulse-anim 2s ease-in-out infinite;
+    }
+    @keyframes pulse-anim {
+      0%,100% { opacity: 1; box-shadow: 0 0 6px var(--glow); }
+      50%      { opacity: .6; box-shadow: 0 0 2px var(--glow); }
+    }
+
+    .node-id    { font-family: var(--mono); font-weight: 600; font-size: 13px; }
+    .node-badge { font-family: var(--mono); font-size: 9px; letter-spacing: .1em; padding: 2px 6px; border-radius: 3px; }
+
+    .btn-split {
+      font-family: var(--mono); font-size: 9px; padding: 2px 7px; border-radius: 4px;
+      cursor: pointer; letter-spacing: .05em; background: transparent; border: 1px solid var(--muted); color: #6b7280;
+    }
+    .btn-split.active { border-color: #ef4444; color: #f87171; }
+
+    .node-stats { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; }
+    .mini-stat-label { font-family: var(--mono); font-size: 8px; color: #374151; letter-spacing: .1em; }
+    .mini-stat-value { font-family: var(--mono); font-size: 11px; color: #6b7280; }
+
+    /* Write panel */
+    .write-section { padding: 14px; border-top: 1px solid var(--border); margin-top: 14px; }
+    .write-header  { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+
+    .btn-sample {
+      font-family: var(--mono); font-size: 9px; padding: 2px 7px; border-radius: 4px;
+      cursor: pointer; background: transparent; border: 1px solid var(--muted); color: #6b7280;
+      letter-spacing: .05em;
+    }
+
+    #payload {
+      width: 100%; height: 110px;
+      font-family: var(--mono); font-size: 10.5px;
+      background: var(--bg); border: 1px solid var(--border);
+      color: #7dd3fc; padding: 8px 10px; border-radius: 6px; resize: none;
+      line-height: 1.6; outline: none;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    #payload:focus { border-color: #4f46e5; box-shadow: 0 0 0 2px rgba(79,70,229,.2); }
+
+    #btn-write {
+      width: 100%; margin-top: 8px; padding: 9px 0; border-radius: 6px;
+      cursor: pointer; background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      border: none; color: #fff;
+      font-family: var(--mono); font-weight: 600; font-size: 12px; letter-spacing: .08em;
+      transition: opacity .15s, transform .1s;
+    }
+    #btn-write:hover:not(:disabled) { opacity: .85; transform: translateY(-1px); }
+    #btn-write:active:not(:disabled) { transform: translateY(0); }
+    #btn-write:disabled { background: var(--dim); cursor: not-allowed; }
+
+    #write-status { font-family: var(--mono); font-size: 10px; margin-top: 5px; text-align: center; }
+    #write-perf   { font-family: var(--mono); font-size: 10px; color: #4ade80; margin-top: 4px; text-align: right; }
+
+    /* Network chaos */
+    .chaos-section { padding: 14px; margin-top: auto; border-top: 1px solid var(--border); }
+    .slider-row { margin-bottom: 12px; }
+    .slider-top { display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .slider-top span { font-family: var(--mono); font-size: 9px; }
+    .slider-top .s-label { color: #374151; letter-spacing: .1em; }
+    .slider-top .s-value { color: #6b7280; }
+    input[type=range] { width: 100%; accent-color: #4f46e5; }
+
+    /* Main panel */
+    main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    .tab-bar {
+      display: flex; gap: 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface); padding: 0 4px;
+    }
+    .tab-btn {
+      padding: 10px 18px; border: none; background: transparent;
+      cursor: pointer; font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+      color: #4b5563; border-bottom: 2px solid transparent;
+      transition: color .15s, border-color .15s;
+    }
+    .tab-btn.active { color: #c7d2fe; border-bottom-color: #6366f1; }
+
+    .tab-hint { display: flex; align-items: center; padding-right: 16px; font-family: var(--mono); font-size: 10px; color: #374151; }
+
+    .tab-panel { flex: 1; overflow: auto; padding: 12px 16px; display: none; }
+    .tab-panel.active { display: block; }
+    #tab-arch { padding: 24px 28px; }
+
+    /* Events */
+    #events-list { display: flex; flex-direction: column; gap: 5px; }
+
+    .event-row {
+      background: var(--elevated); border: 1px solid var(--border);
+      border-left: 3px solid var(--dim);
+      border-radius: 5px; padding: 7px 12px; cursor: pointer;
+      transition: background .2s, border-left-color .5s;
+    }
+    .event-row:hover { background: #111827; }
+    .event-row.flash { border-left-color: #4ade80; animation: flash-in .4s ease; }
+    @keyframes flash-in {
+      from { background: rgba(74,222,128,.08); }
+      to   { background: transparent; }
+    }
+
+    .event-cols { display: flex; align-items: center; gap: 10px; }
+    .ev-lsn   { font-family: var(--mono); font-size: 11px; color: #4f46e5; min-width: 64px; font-weight: 600; }
+    .ev-term  { font-family: var(--mono); font-size: 9px; color: #374151; min-width: 20px; }
+    .ev-type  { font-family: var(--mono); font-size: 9px; color: #7c3aed; background: #1e1b4b; padding: 1px 6px; border-radius: 3px; letter-spacing: .05em; }
+    .ev-body  { flex: 1; font-family: var(--mono); font-size: 10px; color: #4b5563; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ev-ts    { font-family: var(--mono); font-size: 9px; color: var(--dim); white-space: nowrap; }
+    .ev-arrow { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+
+    .event-detail {
+      display: none; margin-top: 8px; padding: 10px 12px;
+      background: var(--bg); border-radius: 4px;
+      font-family: var(--mono); font-size: 11px; color: #7dd3fc;
+      line-height: 1.6; overflow: auto; white-space: pre;
+    }
+    .event-row.expanded .event-detail { display: block; }
+    .event-row.expanded .ev-arrow::after { content: '▲'; }
+    .event-row:not(.expanded) .ev-arrow::after { content: '▼'; }
+
+    /* Syslog */
+    #syslog-list { font-family: var(--mono); }
+    .log-entry { font-size: 11px; padding: 3px 0; border-bottom: 1px solid var(--dim); }
+    .log-entry .log-ts { color: var(--dim); margin-right: 10px; }
+    .log-entry.info    { color: #4b5563; }
+    .log-entry.success { color: #4ade80; }
+    .log-entry.warn    { color: #fbbf24; }
+    .log-entry.error   { color: #f87171; }
+
+    /* Empty state */
+    .empty-state { text-align: center; padding: 80px 40px; color: var(--muted); }
+    .empty-icon  { font-size: 40px; margin-bottom: 12px; opacity: .3; }
+    .empty-title { font-family: var(--mono); font-size: 13px; color: #374151; margin-bottom: 8px; }
+    .empty-sub   { font-size: 12px; color: var(--dim); max-width: 400px; margin: 0 auto; }
+
+    /* Architecture */
+    .arch-header { font-family: var(--mono); font-size: 11px; color: #374151; letter-spacing: .15em; margin-bottom: 20px; }
+    .arch-blocks { display: flex; flex-direction: column; gap: 14px; }
+    .arch-block  {
+      background: var(--elevated); border: 1px solid var(--border);
+      border-radius: 6px; padding: 14px 16px;
+    }
+    .arch-block-title { font-family: var(--mono); font-weight: 600; font-size: 11px; letter-spacing: .1em; margin-bottom: 10px; }
+    .arch-items { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+    .arch-item  { display: flex; gap: 8px; align-items: flex-start; }
+    .arch-bullet { font-family: var(--mono); font-size: 10px; opacity: .5; margin-top: 1px; }
+    .arch-text   { font-family: var(--mono); font-size: 11px; color: #6b7280; line-height: 1.5; }
+    .arch-note   {
+      font-size: 11px; color: #374151;
+      background: var(--bg); padding: 6px 10px; border-radius: 4px;
+    }
+    .arch-scale  {
+      margin-top: 20px; padding: 14px 16px;
+      background: var(--elevated); border: 1px solid var(--border); border-radius: 6px;
+      font-family: var(--mono); font-size: 10px; color: #374151; line-height: 2;
+    }
+    .arch-scale-title { color: #4f46e5; margin-bottom: 8px; letter-spacing: .1em; }
+  </style>
+</head>
+<body>
+<div class="scanline"></div>
+<div id="app">
+
+  <!-- Top Bar -->
+  <header>
+    <div class="logo">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <polygon points="14,2 26,8 26,20 14,26 2,20 2,8" fill="none" stroke="#4f46e5" stroke-width="1.5"/>
+        <polygon points="14,7 21,11 21,17 14,21 7,17 7,11" fill="none" stroke="#4f46e5" stroke-width="1" opacity="0.5"/>
+        <circle cx="14" cy="14" r="2.5" fill="#4f46e5"/>
+      </svg>
+      <div>
+        <div class="logo-name">ChronicleDB</div>
+        <div class="logo-sub">DISTRIBUTED EVENT LOG  •  RAFT CP  •  VANILLA JS</div>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <div class="metrics">
+      <div class="metric"><span class="metric-label">NODES</span><span class="metric-value" style="color:#6366f1" id="m-nodes">3</span></div>
+      <div class="sep"></div>
+      <div class="metric"><span class="metric-label">LEADER</span><span class="metric-value" style="color:#4ade80" id="m-leader">–</span></div>
+      <div class="metric"><span class="metric-label">TERM</span><span class="metric-value" style="color:#4ade80" id="m-term">–</span></div>
+      <div class="sep"></div>
+      <div class="metric"><span class="metric-label">EVENTS</span><span class="metric-value" style="color:#60a5fa" id="m-events">0</span></div>
+      <div class="metric"><span class="metric-label">AVG WR</span><span class="metric-value" style="color:#fbbf24" id="m-avgwr">–</span></div>
+    </div>
+  </header>
+
+  <div class="body">
+
+    <!-- Sidebar -->
+    <aside>
+      <div class="section">
+        <div class="section-label">CLUSTER NODES</div>
+        <div id="nodes-list"></div>
+      </div>
+
+      <div class="write-section">
+        <div class="write-header">
+          <div class="section-label">APPEND EVENT</div>
+          <button class="btn-sample" id="btn-sample">SAMPLE</button>
+        </div>
+        <textarea id="payload" spellcheck="false"></textarea>
+        <button id="btn-write">⚡  APPEND TO LOG</button>
+        <div id="write-status"></div>
+        <div id="write-perf"></div>
+      </div>
+
+      <div class="chaos-section">
+        <div class="section-label" style="margin-bottom:10px">NETWORK CHAOS</div>
+        <div class="slider-row">
+          <div class="slider-top">
+            <span class="s-label">LATENCY</span>
+            <span class="s-value" id="delay-val">25ms</span>
+          </div>
+          <input type="range" id="delay-slider" min="0" max="800" value="25" />
+        </div>
+        <div class="slider-row">
+          <div class="slider-top">
+            <span class="s-label">PACKET LOSS</span>
+            <span class="s-value" id="drop-val">0%</span>
+          </div>
+          <input type="range" id="drop-slider" min="0" max="80" value="0" />
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main>
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="events">EVENT STREAM</button>
+        <button class="tab-btn" data-tab="syslog">SYSTEM LOG</button>
+        <button class="tab-btn" data-tab="arch">ARCHITECTURE</button>
+        <div class="spacer"></div>
+        <div class="tab-hint" id="events-hint">0 entries  •  click to expand</div>
+      </div>
+
+      <div class="tab-panel active" id="tab-events">
+        <div id="events-list">
+          <div class="empty-state">
+            <div class="empty-icon">⬡</div>
+            <div class="empty-title">Event log is empty</div>
+            <div class="empty-sub">Append events using the panel on the left. Each committed write becomes an immutable entry in the global log.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-syslog">
+        <div id="syslog-list"></div>
+      </div>
+
+      <div class="tab-panel" id="tab-arch">
+        <div class="arch-header">SYSTEM ARCHITECTURE  •  CHRONICLEDB  •  RAFT-BASED DISTRIBUTED EVENT LOG</div>
+        <div class="arch-blocks" id="arch-blocks"></div>
+        <div class="arch-scale">
+          <div class="arch-scale-title">SCALING PATH</div>
+          <div>Single node → Add nodes (odd count: 3, 5, 7) → Partitioned log (topic sharding, each shard its own Raft group)</div>
+          <div>Leader handles writes → Followers serve sequential reads from local log → OPFS segments replicated across all nodes</div>
+          <div>Production transport: WebRTC mesh (browser clusters) or TCP+TLS (server clusters) with the same Raft layer</div>
+        </div>
+      </div>
+    </main>
+
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   CHRONICLEDB — Raft-Consensus Distributed Event Log (Vanilla JS)
+   Same core engine as the React version, DOM-manipulated UI.
+═══════════════════════════════════════════════════════════════════════════ */
+
+// ── Constants ────────────────────────────────────────────────────────────────
+const ELECTION_TIMEOUT_MIN = 2200;
+const ELECTION_TIMEOUT_MAX = 4400;
+const HEARTBEAT_INTERVAL   = 550;
+
+// ── Transport ────────────────────────────────────────────────────────────────
+class Transport {
+  constructor() {
+    this.handlers    = {};
+    this.delay       = 25;
+    this.jitter      = 15;
+    this.dropRate    = 0;
+    this.partitioned = new Set();
+  }
+  register(id, handler) { this.handlers[id] = handler; }
+  send(from, to, msg) {
+    if (this.partitioned.has(from) || this.partitioned.has(to)) return;
+    if (Math.random() < this.dropRate) return;
+    const h = this.handlers[to];
+    if (h) setTimeout(() => h({ from, ...msg }), this.delay + Math.random() * this.jitter);
+  }
+  broadcast(from, peers, msg) { peers.forEach(to => this.send(from, to, msg)); }
+  partition(id) { this.partitioned.add(id); }
+  heal(id)      { this.partitioned.delete(id); }
+}
+
+// ── Raft Node ─────────────────────────────────────────────────────────────────
+class RaftNode {
+  constructor(id, peers, transport, onChange) {
+    this.id        = id;
+    this.peers     = peers;
+    this.transport = transport;
+    this.onChange  = onChange;
+
+    this.currentTerm = 0;
+    this.votedFor    = null;
+    this.log         = [];
+
+    this.state       = 'follower';
+    this.commitIndex = -1;
+    this.lastApplied = -1;
+    this.leaderId    = null;
+
+    this.nextIndex     = {};
+    this.matchIndex    = {};
+    this.votesReceived = new Set();
+
+    this.applied       = [];
+    this.pendingWrites = {};
+    this.subscribers   = [];
+
+    this.metrics = { writes: 0, heartbeats: 0, elections: 0 };
+
+    this._electionTimer  = null;
+    this._heartbeatTimer = null;
+
+    transport.register(id, msg => this._recv(msg));
+    this._resetElection();
+  }
+
+  _randTimeout() {
+    return ELECTION_TIMEOUT_MIN + Math.random() * (ELECTION_TIMEOUT_MAX - ELECTION_TIMEOUT_MIN);
+  }
+
+  _resetElection() {
+    clearTimeout(this._electionTimer);
+    this._electionTimer = setTimeout(() => this._startElection(), this._randTimeout());
+  }
+
+  _startHeartbeat() {
+    clearInterval(this._heartbeatTimer);
+    this._heartbeatTimer = setInterval(() => this._sendHeartbeats(), HEARTBEAT_INTERVAL);
+  }
+
+  _startElection() {
+    this.currentTerm++;
+    this.state         = 'candidate';
+    this.votedFor      = this.id;
+    this.votesReceived = new Set([this.id]);
+    this.leaderId      = null;
+    this.metrics.elections++;
+    this._resetElection();
+    this._notify();
+
+    const lastIdx  = this.log.length - 1;
+    const lastTerm = lastIdx >= 0 ? this.log[lastIdx].term : 0;
+    this.transport.broadcast(this.id, this.peers, {
+      type: 'RV', term: this.currentTerm,
+      candidateId: this.id, lastLogIndex: lastIdx, lastLogTerm: lastTerm,
+    });
+  }
+
+  _becomeLeader() {
+    this.state    = 'leader';
+    this.leaderId = this.id;
+    clearTimeout(this._electionTimer);
+    this.peers.forEach(p => { this.nextIndex[p] = this.log.length; this.matchIndex[p] = -1; });
+    this._startHeartbeat();
+    this._notify();
+    this._sendHeartbeats();
+  }
+
+  _sendHeartbeats() {
+    if (this.state !== 'leader') return;
+    this.metrics.heartbeats++;
+    this.peers.forEach(p => this._sendAE(p));
+  }
+
+  _sendAE(peer) {
+    const ni       = this.nextIndex[peer] ?? this.log.length;
+    const prevIdx  = ni - 1;
+    const prevTerm = prevIdx >= 0 ? (this.log[prevIdx]?.term ?? 0) : 0;
+    this.transport.send(this.id, peer, {
+      type: 'AE', term: this.currentTerm, leaderId: this.id,
+      prevLogIndex: prevIdx, prevLogTerm: prevTerm,
+      entries: this.log.slice(ni),
+      leaderCommit: this.commitIndex,
+    });
+  }
+
+  _recv(msg) {
+    if (msg.term > this.currentTerm) {
+      this.currentTerm = msg.term;
+      this.state       = 'follower';
+      this.votedFor    = null;
+      this.leaderId    = null;
+      clearInterval(this._heartbeatTimer);
+      this._resetElection();
+      this._notify();
+    }
+    const dispatch = { RV: '_onRV', RVR: '_onRVR', AE: '_onAE', AER: '_onAER' };
+    const fn = dispatch[msg.type];
+    if (fn) this[fn](msg);
+  }
+
+  _onRV(msg) {
+    const lastIdx  = this.log.length - 1;
+    const lastTerm = lastIdx >= 0 ? this.log[lastIdx].term : 0;
+    const logOk    = msg.lastLogTerm > lastTerm ||
+                     (msg.lastLogTerm === lastTerm && msg.lastLogIndex >= lastIdx);
+    const canVote  = msg.term >= this.currentTerm &&
+                     (this.votedFor === null || this.votedFor === msg.candidateId) && logOk;
+    if (canVote) { this.votedFor = msg.candidateId; this._resetElection(); }
+    this.transport.send(this.id, msg.from, { type: 'RVR', term: this.currentTerm, voteGranted: canVote });
+  }
+
+  _onRVR(msg) {
+    if (this.state !== 'candidate' || msg.term !== this.currentTerm || !msg.voteGranted) return;
+    this.votesReceived.add(msg.from);
+    const quorum = Math.floor((this.peers.length + 1) / 2) + 1;
+    if (this.votesReceived.size >= quorum) this._becomeLeader();
+  }
+
+  _onAE(msg) {
+    if (msg.term < this.currentTerm) {
+      this.transport.send(this.id, msg.from, { type: 'AER', term: this.currentTerm, success: false, matchIndex: -1 });
+      return;
+    }
+    if (this.state !== 'follower') { this.state = 'follower'; clearInterval(this._heartbeatTimer); }
+    this.leaderId = msg.leaderId;
+    this._resetElection();
+    this._notify();
+
+    const prevOk = msg.prevLogIndex === -1 || (this.log[msg.prevLogIndex]?.term === msg.prevLogTerm);
+    if (!prevOk) {
+      this.transport.send(this.id, msg.from, { type: 'AER', term: this.currentTerm, success: false, matchIndex: this.log.length - 1 });
+      return;
+    }
+
+    msg.entries.forEach((entry, i) => {
+      const idx = msg.prevLogIndex + 1 + i;
+      if (this.log[idx] && this.log[idx].term !== entry.term) this.log.splice(idx);
+      if (!this.log[idx]) this.log.push(entry);
+    });
+
+    if (msg.leaderCommit > this.commitIndex) {
+      this.commitIndex = Math.min(msg.leaderCommit, this.log.length - 1);
+      this._apply();
+    }
+    this.transport.send(this.id, msg.from, { type: 'AER', term: this.currentTerm, success: true, matchIndex: this.log.length - 1 });
+  }
+
+  _onAER(msg) {
+    if (this.state !== 'leader') return;
+    if (!msg.success) {
+      this.nextIndex[msg.from] = Math.max(0, (this.nextIndex[msg.from] ?? 1) - 1);
+      this._sendAE(msg.from);
+      return;
+    }
+    this.matchIndex[msg.from] = msg.matchIndex;
+    this.nextIndex[msg.from]  = msg.matchIndex + 1;
+    for (let n = this.log.length - 1; n > this.commitIndex; n--) {
+      if (this.log[n]?.term !== this.currentTerm) continue;
+      const count  = 1 + this.peers.filter(p => (this.matchIndex[p] ?? -1) >= n).length;
+      const quorum = Math.floor((this.peers.length + 1) / 2) + 1;
+      if (count >= quorum) { this.commitIndex = n; this._apply(); break; }
+    }
+  }
+
+  _apply() {
+    while (this.lastApplied < this.commitIndex) {
+      this.lastApplied++;
+      const entry = this.log[this.lastApplied];
+      this.applied.push(entry);
+      this.metrics.writes++;
+      const pw = this.pendingWrites[entry.lsn];
+      if (pw) { pw.resolve(entry); delete this.pendingWrites[entry.lsn]; }
+      this.subscribers.forEach(cb => cb(entry));
+    }
+    this._notify();
+  }
+
+  append(payload) {
+    if (this.state !== 'leader')
+      return Promise.reject(new Error(`Not leader — redirect to ${this.leaderId ?? 'unknown'}`));
+    const entry = { lsn: this.log.length, term: this.currentTerm, timestamp: Date.now(), payload };
+    this.log.push(entry);
+    this._sendHeartbeats();
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        if (this.pendingWrites[entry.lsn]) { delete this.pendingWrites[entry.lsn]; reject(new Error('Write timeout after 5s')); }
+      }, 5000);
+      this.pendingWrites[entry.lsn] = { resolve: e => { clearTimeout(timeout); resolve(e); }, reject };
+    });
+  }
+
+  subscribe(cb) {
+    this.subscribers.push(cb);
+    return () => { this.subscribers = this.subscribers.filter(s => s !== cb); };
+  }
+
+  status() {
+    return {
+      id: this.id, state: this.state, term: this.currentTerm,
+      leaderId: this.leaderId, logLength: this.log.length,
+      commitIndex: this.commitIndex, appliedCount: this.applied.length,
+      metrics: { ...this.metrics },
+    };
+  }
+
+  _notify() { this.onChange?.(); }
+
+  destroy() {
+    clearTimeout(this._electionTimer);
+    clearInterval(this._heartbeatTimer);
+    Object.values(this.pendingWrites).forEach(pw => pw.reject(new Error('Node destroyed')));
+  }
+}
+
+// ── Cluster ───────────────────────────────────────────────────────────────────
+class Cluster {
+  constructor(n, onChange) {
+    this.transport = new Transport();
+    const ids = Array.from({ length: n }, (_, i) => `N${i + 1}`);
+    this.nodes = {};
+    ids.forEach(id => {
+      this.nodes[id] = new RaftNode(id, ids.filter(p => p !== id), this.transport, onChange);
+    });
+  }
+  getLeader()          { return Object.values(this.nodes).find(n => n.state === 'leader') ?? null; }
+  append(payload)      { const l = this.getLeader(); return l ? l.append(payload) : Promise.reject(new Error('No leader')); }
+  status()             { return Object.values(this.nodes).map(n => n.status()); }
+  partition(id)        { this.transport.partition(id); }
+  heal(id)             { this.transport.heal(id); const n = this.nodes[id]; if (n) { n.state='follower'; n.leaderId=null; n._resetElection(); n._notify(); } }
+  setDelay(ms)         { this.transport.delay    = ms; }
+  setDropRate(rate)    { this.transport.dropRate  = rate; }
+  destroy()            { Object.values(this.nodes).forEach(n => n.destroy()); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UI
+═══════════════════════════════════════════════════════════════════════════ */
+
+const SAMPLES = [
+  { type: "UserRegistered",    userId: "u-f3a9",  email: "alice@example.com",  role: "admin" },
+  { type: "OrderPlaced",       orderId: "ord-991", amount: 149.99, currency: "USD", items: 3 },
+  { type: "InventoryAdjusted", sku: "SKU-042",    delta: -1, warehouse: "US-WEST-2" },
+  { type: "PaymentSettled",    txId: "tx-7f2a",   status: "success", amount: 149.99 },
+  { type: "StreamPublished",   streamId: "s-44",  topic: "analytics.raw", partition: 0 },
+  { type: "ConfigDeployed",    service: "api-gw", version: "2.14.1", env: "prod" },
+  { type: "AnomalyDetected",   sensor: "CPU",     value: 98.2, threshold: 85, severity: "high" },
+];
+
+const STATE_COLORS = {
+  leader:    { bg: '#052e16', border: '#16a34a', text: '#4ade80', glow: '#16a34a' },
+  follower:  { bg: '#0c1a35', border: '#2563eb', text: '#60a5fa', glow: '#3b82f6' },
+  candidate: { bg: '#2d1a02', border: '#d97706', text: '#fbbf24', glow: '#f59e0b' },
+  isolated:  { bg: '#1a0a0a', border: '#7f1d1d', text: '#f87171', glow: '#ef4444' },
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let cluster      = null;
+let partitioned  = new Set();
+let writeStats   = { count: 0, totalMs: 0, lastMs: null };
+let writing      = false;
+let activeTab    = 'events';
+let eventCount   = 0;   // tracks how many event rows are rendered
+let lastLeaderId = null;
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
+const nodesList   = $('nodes-list');
+const eventsList  = $('events-list');
+const syslogList  = $('syslog-list');
+const eventsHint  = $('events-hint');
+const btnWrite    = $('btn-write');
+const writeStatus = $('write-status');
+const writePerf   = $('write-perf');
+const payloadTA   = $('payload');
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    activeTab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${activeTab}`));
+    $('events-hint').style.display = activeTab === 'events' ? 'flex' : 'none';
+  });
+});
+
+// ── Sliders ───────────────────────────────────────────────────────────────────
+$('delay-slider').addEventListener('input', e => {
+  const v = Number(e.target.value);
+  $('delay-val').textContent = `${v}ms`;
+  cluster?.setDelay(v);
+});
+
+$('drop-slider').addEventListener('input', e => {
+  const v = Number(e.target.value);
+  $('drop-val').textContent = `${v}%`;
+  cluster?.setDropRate(v / 100);
+});
+
+// ── Sample payload ────────────────────────────────────────────────────────────
+$('btn-sample').addEventListener('click', () => {
+  const s = SAMPLES[Math.floor(Math.random() * SAMPLES.length)];
+  payloadTA.value = JSON.stringify({ ...s, _ts: Date.now() }, null, 2);
+});
+
+// ── Write ─────────────────────────────────────────────────────────────────────
+btnWrite.addEventListener('click', async () => {
+  if (writing) return;
+  let parsed;
+  try { parsed = JSON.parse(payloadTA.value); }
+  catch { addLog('Payload is not valid JSON', 'error'); return; }
+
+  writing = true;
+  btnWrite.disabled   = true;
+  btnWrite.textContent = '⏳  COMMITTING…';
+  const t0 = performance.now();
+
+  try {
+    const entry = await cluster.append(parsed);
+    const latMs = Math.round(performance.now() - t0);
+    writeStats.count++;
+    writeStats.totalMs += latMs;
+    writeStats.lastMs   = latMs;
+    addLog(`committed  LSN=${entry.lsn}  term=${entry.term}  Δt=${latMs}ms`, 'success');
+    prependEvent(entry, true);
+    updateHeader();
+    const avg = Math.round(writeStats.totalMs / writeStats.count);
+    writePerf.textContent = `last write: ${latMs}ms  •  total: ${writeStats.count}`;
+    $('m-avgwr').textContent = `${avg}ms`;
+
+    // Switch to events tab
+    if (activeTab !== 'events') {
+      document.querySelector('[data-tab="events"]').click();
+    }
+  } catch (e) {
+    addLog(`write failed: ${e.message}`, 'error');
+  } finally {
+    writing = false;
+    btnWrite.disabled   = false;
+    btnWrite.textContent = '⚡  APPEND TO LOG';
+  }
+});
+
+// ── Syslog ────────────────────────────────────────────────────────────────────
+function addLog(msg, type = 'info') {
+  const ts   = new Date().toISOString().slice(11, 23);
+  const div  = document.createElement('div');
+  div.className = `log-entry ${type}`;
+  div.innerHTML = `<span class="log-ts">${ts}</span>${escHtml(msg)}`;
+  syslogList.prepend(div);
+  // Cap at 150
+  while (syslogList.children.length > 150) syslogList.lastChild.remove();
+}
+
+// ── Event rows ────────────────────────────────────────────────────────────────
+function prependEvent(entry, flash = false) {
+  // Remove empty state if present
+  const empty = eventsList.querySelector('.empty-state');
+  if (empty) empty.remove();
+
+  const typeStr = typeof entry.payload === 'object' ? entry.payload?.type : null;
+  const row = document.createElement('div');
+  row.className = 'event-row' + (flash ? ' flash' : '');
+  row.dataset.lsn = entry.lsn;
+
+  row.innerHTML = `
+    <div class="event-cols">
+      <span class="ev-lsn">LSN ${String(entry.lsn).padStart(4, '0')}</span>
+      <span class="ev-term">T${entry.term}</span>
+      ${typeStr ? `<span class="ev-type">${escHtml(typeStr)}</span>` : ''}
+      <span class="ev-body">${escHtml(JSON.stringify(entry.payload))}</span>
+      <span class="ev-ts">${new Date(entry.timestamp).toISOString().slice(11, 23)}</span>
+      <span class="ev-arrow"></span>
+    </div>
+    <pre class="event-detail">${escHtml(JSON.stringify(entry.payload, null, 2))}</pre>
+  `;
+
+  row.addEventListener('click', () => {
+    row.classList.toggle('expanded');
+  });
+
+  if (flash) {
+    setTimeout(() => row.classList.remove('flash'), 600);
+  }
+
+  eventsList.prepend(row);
+  eventCount++;
+  eventsHint.textContent = `${eventCount} entr${eventCount === 1 ? 'y' : 'ies'}  •  click to expand`;
+}
+
+// ── Node cards ────────────────────────────────────────────────────────────────
+function renderNodes(statuses) {
+  // Build a map of existing cards
+  const existing = {};
+  nodesList.querySelectorAll('[data-node-id]').forEach(el => {
+    existing[el.dataset.nodeId] = el;
+  });
+
+  statuses.forEach(s => {
+    const isPart = partitioned.has(s.id);
+    const c      = isPart ? STATE_COLORS.isolated : (STATE_COLORS[s.state] ?? STATE_COLORS.follower);
+    const badge  = isPart ? 'ISOLATED' : (s.state ?? '…').toUpperCase();
+
+    let card = existing[s.id];
+    if (!card) {
+      card = document.createElement('div');
+      card.className = 'node-card';
+      card.dataset.nodeId = s.id;
+      card.innerHTML = `
+        <div class="node-header">
+          <div class="node-left">
+            <div class="pulse-dot"></div>
+            <span class="node-id">${s.id}</span>
+            <span class="node-badge"></span>
+          </div>
+          <button class="btn-split">${isPart ? 'HEAL' : 'SPLIT'}</button>
+        </div>
+        <div class="node-stats">
+          <div><div class="mini-stat-label">TERM</div><div class="mini-stat-value" data-stat="term">–</div></div>
+          <div><div class="mini-stat-label">LOG</div><div class="mini-stat-value" data-stat="log">0</div></div>
+          <div><div class="mini-stat-label">COMMIT</div><div class="mini-stat-value" data-stat="commit">–</div></div>
+          <div><div class="mini-stat-label">APPLD</div><div class="mini-stat-value" data-stat="appld">0</div></div>
+        </div>
+      `;
+      card.querySelector('.btn-split').addEventListener('click', () => togglePartition(s.id));
+      nodesList.appendChild(card);
+    }
+
+    // Update styles
+    card.style.background  = c.bg;
+    card.style.border      = `1px solid ${c.border}`;
+    card.style.boxShadow   = s.state === 'leader' ? `0 0 12px ${c.border}30` : 'none';
+
+    const dot   = card.querySelector('.pulse-dot');
+    dot.style.background = c.glow;
+    dot.style.setProperty('--glow', c.glow);
+
+    const bdg = card.querySelector('.node-badge');
+    bdg.textContent         = badge;
+    bdg.style.color         = c.text;
+    bdg.style.background    = `${c.glow}18`;
+
+    const btn = card.querySelector('.btn-split');
+    btn.textContent = isPart ? 'HEAL' : 'SPLIT';
+    btn.classList.toggle('active', isPart);
+
+    card.querySelector('[data-stat="term"]').textContent   = s.term ?? '–';
+    card.querySelector('[data-stat="log"]').textContent    = s.logLength ?? 0;
+    card.querySelector('[data-stat="commit"]').textContent = s.commitIndex >= 0 ? s.commitIndex : '–';
+    card.querySelector('[data-stat="appld"]').textContent  = s.appliedCount ?? 0;
+  });
+}
+
+// ── Header metrics ────────────────────────────────────────────────────────────
+function updateHeader() {
+  if (!cluster) return;
+  const statuses = cluster.status();
+  const leader   = statuses.find(s => s.state === 'leader');
+  $('m-nodes').textContent  = statuses.length;
+  $('m-leader').textContent = leader?.id ?? '–';
+  $('m-term').textContent   = leader?.term ?? '–';
+  $('m-events').textContent = leader?.appliedCount ?? 0;
+
+  // Write button availability
+  if (!writing) {
+    btnWrite.disabled = !leader;
+    btnWrite.style.opacity = leader ? '1' : '0.4';
+  }
+
+  // "awaiting leader" message
+  writeStatus.textContent   = leader ? '' : 'awaiting leader election…';
+  writeStatus.style.color   = '#d97706';
+}
+
+// ── Partition / heal ──────────────────────────────────────────────────────────
+function togglePartition(id) {
+  if (partitioned.has(id)) {
+    partitioned.delete(id);
+    cluster.heal(id);
+    addLog(`partition healed  node=${id}  rejoining cluster`, 'success');
+  } else {
+    partitioned.add(id);
+    cluster.partition(id);
+    addLog(`network partition  node=${id}  isolated`, 'warn');
+  }
+}
+
+// ── Poll loop ─────────────────────────────────────────────────────────────────
+function poll() {
+  if (!cluster) return;
+  const statuses = cluster.status();
+  renderNodes(statuses);
+  updateHeader();
+}
+
+// ── Architecture view ─────────────────────────────────────────────────────────
+function buildArch() {
+  const ARCH = [
+    {
+      layer: '01  CLIENT API', color: '#7c3aed',
+      items: ['append(payload) → Promise<{lsn, term, ts, payload}>', 'read(fromLSN, limit) → Event[]', 'subscribe(cb) → unsubscribe()'],
+      note: 'Any JSON schema. No migrations. Schema-on-read.',
+    },
+    {
+      layer: '02  RAFT CONSENSUS (CP)', color: '#4f46e5',
+      items: ['Leader election — randomized timeouts, quorum voting', 'Log replication — AppendEntries RPC, heartbeat keepalive', 'Commit rule — majority quorum (⌊N/2⌋+1 nodes)', 'Safety — only log-complete nodes can be elected leader'],
+      note: 'Strong consistency: all reads see all prior committed writes.',
+    },
+    {
+      layer: '03  APPEND-ONLY LOG', color: '#2563eb',
+      items: ['Immutable entries — LSN (Log Sequence Number) primary key', 'Entry: { lsn, term, timestamp, payload }', 'Sequential write path — O(1) append, no B-tree overhead', 'Sequential read path — O(1) slice by LSN range'],
+      note: 'Target storage: OPFS (Origin Private File System) in browser → memory-mapped file segments on server.',
+    },
+    {
+      layer: '04  TRANSPORT (PLUGGABLE)', color: '#0891b2',
+      items: ['In-memory bus (this demo) — same-process, configurable delay/loss', 'BroadcastChannel — multi-tab, same-origin browser', 'WebRTC DataChannel — peer-to-peer, browser-to-browser', 'WebSocket relay — hybrid, browser ↔ server nodes'],
+      note: 'Swap transport without touching consensus or storage logic.',
+    },
+    {
+      layer: '05  BROWSER PERSISTENCE (OPFS)', color: '#0f766e',
+      items: ['Origin Private File System — synchronous file I/O in Worker', 'Log segments as flat binary files (e.g. 64MB each)', 'Index file: LSN → byte offset within segment', 'fsync on commit boundary — durability without IndexedDB overhead'],
+      note: 'OPFS gives ~10× faster sequential writes vs IndexedDB.',
+    },
+  ];
+
+  const container = $('arch-blocks');
+  ARCH.forEach(b => {
+    const block = document.createElement('div');
+    block.className = 'arch-block';
+    block.style.borderLeft = `4px solid ${b.color}`;
+    block.innerHTML = `
+      <div class="arch-block-title" style="color:${b.color}">${escHtml(b.layer)}</div>
+      <div class="arch-items">
+        ${b.items.map(item => `
+          <div class="arch-item">
+            <span class="arch-bullet" style="color:${b.color}">›</span>
+            <span class="arch-text">${escHtml(item)}</span>
+          </div>`).join('')}
+      </div>
+      <div class="arch-note" style="border-left:2px solid ${b.color}40">${escHtml(b.note)}</div>
+    `;
+    container.appendChild(block);
+  });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+payloadTA.value = JSON.stringify(SAMPLES[0], null, 2);
+buildArch();
+
+addLog('ChronicleDB v1.0  initializing 3-node cluster…', 'info');
+
+cluster = new Cluster(3, () => {
+  poll();
+});
+
+const pollTimer = setInterval(poll, 250);
+poll();
+
+setTimeout(() => addLog('Leader election underway — awaiting quorum…', 'info'), 100);
+setTimeout(() => { poll(); addLog('Cluster online  ✓  ready for writes', 'success'); }, 3200);
+
+window.addEventListener('unload', () => {
+  clearInterval(pollTimer);
+  cluster?.destroy();
+});
+</script>
+</body>
+</html>
