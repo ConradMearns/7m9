@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChronicleDB — Raft-Consensus Distributed Event Log</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       CHRONICLEDB — Raft-Consensus Distributed Event Log
+
+       Architecture:
+       ┌─────────────────────────────────────────────────────────┐
+       │  ChronicleDB API  (append / read / subscribe)           │
+       ├─────────────────────────────────────────────────────────┤
+       │  Raft Consensus   (leader election + log replication)   │
+       ├─────────────────────────────────────────────────────────┤
+       │  Append-Only Log  (immutable LSN-indexed segments)      │
+       ├─────────────────────────────────────────────────────────┤
+       │  Transport Layer  (pluggable: in-memory / WebRTC / WS)  │
+       └─────────────────────────────────────────────────────────┘
+
+       Browser storage: OPFS (Origin Private File System) for real persistence.
+       This demo uses in-memory transport with simulated network conditions.
+    ═══════════════════════════════════════════════════════════════════════════ */
+
+    // ── Constants ────────────────────────────────────────────────────────────────
+    const ELECTION_TIMEOUT_MIN = 2200;
+    const ELECTION_TIMEOUT_MAX = 4400;
+    const HEARTBEAT_INTERVAL   = 550;
+
+    // ── Transport ────────────────────────────────────────────────────────────────
+    class Transport {
+      constructor() {
+        this.handlers   = {};
+        this.delay      = 25;
+        this.jitter     = 15;
+        this.dropRate   = 0;
+        this.partitioned = new Set();
+      }
+
+      register(id, handler) { this.handlers[id] = handler; }
+
+      send(from, to, msg) {
+        if (this.partitioned.has(from) || this.partitioned.has(to)) return;
+        if (Math.random() < this.dropRate) return;
+        const h = this.handlers[to];
+        if (h) setTimeout(() => h({ from, ...msg }), this.delay + Math.random() * this.jitter);
+      }
+
+      broadcast(from, peers, msg) {
+        peers.forEach(to => this.send(from, to, msg));
+      }
+
+      partition(id) { this.partitioned.add(id); }
+      heal(id)      { this.partitioned.delete(id); }
+    }
+
+    // ── Raft Node ─────────────────────────────────────────────────────────────────
+    class RaftNode {
+      constructor(id, peers, transport, onChange) {
+        this.id        = id;
+        this.peers     = peers;
+        this.transport = transport;
+        this.onChange  = onChange;
+
+        this.currentTerm = 0;
+        this.votedFor    = null;
+        this.log         = [];
+
+        this.state       = 'follower';
+        this.commitIndex = -1;
+        this.lastApplied = -1;
+        this.leaderId    = null;
+
+        this.nextIndex   = {};
+        this.matchIndex  = {};
+
+        this.votesReceived = new Set();
+
+        this.applied       = [];
+        this.pendingWrites = {};
+        this.subscribers   = [];
+
+        this.metrics = { writes: 0, heartbeats: 0, elections: 0 };
+
+        this._electionTimer   = null;
+        this._heartbeatTimer  = null;
+
+        transport.register(id, msg => this._recv(msg));
+        this._resetElection();
+      }
+
+      _randTimeout() {
+        return ELECTION_TIMEOUT_MIN + Math.random() * (ELECTION_TIMEOUT_MAX - ELECTION_TIMEOUT_MIN);
+      }
+
+      _resetElection() {
+        clearTimeout(this._electionTimer);
+        this._electionTimer = setTimeout(() => this._startElection(), this._randTimeout());
+      }
+
+      _startHeartbeat() {
+        clearInterval(this._heartbeatTimer);
+        this._heartbeatTimer = setInterval(() => this._sendHeartbeats(), HEARTBEAT_INTERVAL);
+      }
+
+      _startElection() {
+        this.currentTerm++;
+        this.state         = 'candidate';
+        this.votedFor      = this.id;
+        this.votesReceived = new Set([this.id]);
+        this.leaderId      = null;
+        this.metrics.elections++;
+        this._resetElection();
+        this._notify();
+
+        const lastIdx  = this.log.length - 1;
+        const lastTerm = lastIdx >= 0 ? this.log[lastIdx].term : 0;
+
+        this.transport.broadcast(this.id, this.peers, {
+          type: 'RV', term: this.currentTerm,
+          candidateId: this.id,
+          lastLogIndex: lastIdx,
+          lastLogTerm: lastTerm,
+        });
+      }
+
+      _becomeLeader() {
+        this.state    = 'leader';
+        this.leaderId = this.id;
+        clearTimeout(this._electionTimer);
+
+        this.peers.forEach(p => {
+          this.nextIndex[p]  = this.log.length;
+          this.matchIndex[p] = -1;
+        });
+
+        this._startHeartbeat();
+        this._notify();
+        this._sendHeartbeats();
+      }
+
+      _sendHeartbeats() {
+        if (this.state !== 'leader') return;
+        this.metrics.heartbeats++;
+        this.peers.forEach(p => this._sendAE(p));
+      }
+
+      _sendAE(peer) {
+        const ni      = this.nextIndex[peer] ?? this.log.length;
+        const prevIdx = ni - 1;
+        const prevTerm = prevIdx >= 0 ? (this.log[prevIdx]?.term ?? 0) : 0;
+
+        this.transport.send(this.id, peer, {
+          type: 'AE', term: this.currentTerm, leaderId: this.id,
+          prevLogIndex: prevIdx, prevLogTerm: prevTerm,
+          entries: this.log.slice(ni),
+          leaderCommit: this.commitIndex,
+        });
+      }
+
+      _recv(msg) {
+        if (msg.term > this.currentTerm) {
+          this.currentTerm = msg.term;
+          this.state       = 'follower';
+          this.votedFor    = null;
+          this.leaderId    = null;
+          clearInterval(this._heartbeatTimer);
+          this._resetElection();
+          this._notify();
+        }
+
+        const dispatch = { RV: '_onRV', RVR: '_onRVR', AE: '_onAE', AER: '_onAER' };
+        const fn = dispatch[msg.type];
+        if (fn) this[fn](msg);
+      }
+
+      _onRV(msg) {
+        const lastIdx  = this.log.length - 1;
+        const lastTerm = lastIdx >= 0 ? this.log[lastIdx].term : 0;
+
+        const logOk =
+          msg.lastLogTerm > lastTerm ||
+          (msg.lastLogTerm === lastTerm && msg.lastLogIndex >= lastIdx);
+
+        const canVote =
+          msg.term >= this.currentTerm &&
+          (this.votedFor === null || this.votedFor === msg.candidateId) &&
+          logOk;
+
+        if (canVote) { this.votedFor = msg.candidateId; this._resetElection(); }
+
+        this.transport.send(this.id, msg.from, {
+          type: 'RVR', term: this.currentTerm, voteGranted: canVote,
+        });
+      }
+
+      _onRVR(msg) {
+        if (this.state !== 'candidate' || msg.term !== this.currentTerm) return;
+        if (!msg.voteGranted) return;
+        this.votesReceived.add(msg.from);
+        const quorum = Math.floor((this.peers.length + 1) / 2) + 1;
+        if (this.votesReceived.size >= quorum) this._becomeLeader();
+      }
+
+      _onAE(msg) {
+        if (msg.term < this.currentTerm) {
+          this.transport.send(this.id, msg.from, {
+            type: 'AER', term: this.currentTerm, success: false, matchIndex: -1,
+          });
+          return;
+        }
+
+        if (this.state !== 'follower') {
+          this.state = 'follower';
+          clearInterval(this._heartbeatTimer);
+        }
+        this.leaderId = msg.leaderId;
+        this._resetElection();
+        this._notify();
+
+        const prevOk =
+          msg.prevLogIndex === -1 ||
+          (this.log[msg.prevLogIndex]?.term === msg.prevLogTerm);
+
+        if (!prevOk) {
+          this.transport.send(this.id, msg.from, {
+            type: 'AER', term: this.currentTerm, success: false,
+            matchIndex: this.log.length - 1,
+          });
+          return;
+        }
+
+        msg.entries.forEach((entry, i) => {
+          const idx = msg.prevLogIndex + 1 + i;
+          if (this.log[idx] && this.log[idx].term !== entry.term) {
+            this.log.splice(idx);
+          }
+          if (!this.log[idx]) this.log.push(entry);
+        });
+
+        if (msg.leaderCommit > this.commitIndex) {
+          this.commitIndex = Math.min(msg.leaderCommit, this.log.length - 1);
+          this._apply();
+        }
+
+        this.transport.send(this.id, msg.from, {
+          type: 'AER', term: this.currentTerm, success: true,
+          matchIndex: this.log.length - 1,
+        });
+      }
+
+      _onAER(msg) {
+        if (this.state !== 'leader') return;
+        if (!msg.success) {
+          this.nextIndex[msg.from] = Math.max(0, (this.nextIndex[msg.from] ?? 1) - 1);
+          this._sendAE(msg.from);
+          return;
+        }
+
+        this.matchIndex[msg.from] = msg.matchIndex;
+        this.nextIndex[msg.from]  = msg.matchIndex + 1;
+
+        for (let n = this.log.length - 1; n > this.commitIndex; n--) {
+          if (this.log[n]?.term !== this.currentTerm) continue;
+          const count  = 1 + this.peers.filter(p => (this.matchIndex[p] ?? -1) >= n).length;
+          const quorum = Math.floor((this.peers.length + 1) / 2) + 1;
+          if (count >= quorum) { this.commitIndex = n; this._apply(); break; }
+        }
+      }
+
+      _apply() {
+        while (this.lastApplied < this.commitIndex) {
+          this.lastApplied++;
+          const entry = this.log[this.lastApplied];
+          this.applied.push(entry);
+          this.metrics.writes++;
+
+          const pw = this.pendingWrites[entry.lsn];
+          if (pw) { pw.resolve(entry); delete this.pendingWrites[entry.lsn]; }
+
+          this.subscribers.forEach(cb => cb(entry));
+        }
+        this._notify();
+      }
+
+      append(payload) {
+        if (this.state !== 'leader') {
+          return Promise.reject(new Error(`Not leader — redirect to ${this.leaderId ?? 'unknown'}`));
+        }
+
+        const entry = {
+          lsn: this.log.length,
+          term: this.currentTerm,
+          timestamp: Date.now(),
+          payload,
+        };
+        this.log.push(entry);
+        this._sendHeartbeats();
+
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            if (this.pendingWrites[entry.lsn]) {
+              delete this.pendingWrites[entry.lsn];
+              reject(new Error('Write timeout after 5s'));
+            }
+          }, 5000);
+          this.pendingWrites[entry.lsn] = {
+            resolve: e => { clearTimeout(timeout); resolve(e); },
+            reject,
+          };
+        });
+      }
+
+      read(fromLSN = 0, limit = 500) {
+        return this.applied.slice(fromLSN, fromLSN + limit);
+      }
+
+      subscribe(cb) {
+        this.subscribers.push(cb);
+        return () => { this.subscribers = this.subscribers.filter(s => s !== cb); };
+      }
+
+      status() {
+        return {
+          id: this.id,
+          state: this.state,
+          term: this.currentTerm,
+          leaderId: this.leaderId,
+          logLength: this.log.length,
+          commitIndex: this.commitIndex,
+          appliedCount: this.applied.length,
+          metrics: { ...this.metrics },
+        };
+      }
+
+      _notify() { this.onChange?.(); }
+
+      destroy() {
+        clearTimeout(this._electionTimer);
+        clearInterval(this._heartbeatTimer);
+        Object.values(this.pendingWrites).forEach(pw =>
+          pw.reject(new Error('Node destroyed')));
+      }
+    }
+
+    // ── Cluster ───────────────────────────────────────────────────────────────────
+    class Cluster {
+      constructor(n, onChange) {
+        this.transport = new Transport();
+        const ids = Array.from({ length: n }, (_, i) => `N${i + 1}`);
+        this.nodes = {};
+        ids.forEach(id => {
+          this.nodes[id] = new RaftNode(
+            id,
+            ids.filter(p => p !== id),
+            this.transport,
+            onChange,
+          );
+        });
+      }
+
+      getLeader() {
+        return Object.values(this.nodes).find(n => n.state === 'leader') ?? null;
+      }
+
+      append(payload) {
+        const leader = this.getLeader();
+        if (!leader) return Promise.reject(new Error('No leader — election in progress'));
+        return leader.append(payload);
+      }
+
+      status() { return Object.values(this.nodes).map(n => n.status()); }
+
+      partition(id) { this.transport.partition(id); }
+
+      heal(id) {
+        this.transport.heal(id);
+        const node = this.nodes[id];
+        if (node) {
+          node.state = 'follower';
+          node.leaderId = null;
+          node._resetElection();
+          node._notify();
+        }
+      }
+
+      setDelay(ms)      { this.transport.delay    = ms; }
+      setDropRate(rate) { this.transport.dropRate  = rate; }
+
+      destroy() { Object.values(this.nodes).forEach(n => n.destroy()); }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       REACT UI  ─  Industrial Mission-Control aesthetic
+    ═══════════════════════════════════════════════════════════════════════════ */
+
+    const PALETTE = {
+      bg:       '#060910',
+      surface:  '#0c1018',
+      elevated: '#111827',
+      border:   '#1a2332',
+      leader:   { bg: '#052e16', border: '#16a34a', text: '#4ade80', glow: '#16a34a' },
+      follower: { bg: '#0c1a35', border: '#2563eb', text: '#60a5fa', glow: '#3b82f6' },
+      candidate:{ bg: '#2d1a02', border: '#d97706', text: '#fbbf24', glow: '#f59e0b' },
+      error:    '#f87171',
+      success:  '#4ade80',
+      warn:     '#fbbf24',
+      muted:    '#374151',
+      dim:      '#1f2937',
+    };
+
+    const FONT_MONO = "'IBM Plex Mono', 'Fira Code', 'Cascadia Code', monospace";
+    const FONT_UI   = "'IBM Plex Sans', 'DM Sans', system-ui, sans-serif";
+
+    const SAMPLES = [
+      { type: "UserRegistered",    userId: "u-f3a9",  email: "alice@example.com",  role: "admin" },
+      { type: "OrderPlaced",       orderId: "ord-991", amount: 149.99, currency: "USD", items: 3 },
+      { type: "InventoryAdjusted", sku: "SKU-042",    delta: -1, warehouse: "US-WEST-2" },
+      { type: "PaymentSettled",    txId: "tx-7f2a",   status: "success", amount: 149.99 },
+      { type: "StreamPublished",   streamId: "s-44",  topic: "analytics.raw", partition: 0 },
+      { type: "ConfigDeployed",    service: "api-gw", version: "2.14.1", env: "prod" },
+      { type: "AnomalyDetected",   sensor: "CPU",     value: 98.2, threshold: 85, severity: "high" },
+    ];
+
+    const css = `
+      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body { background: ${PALETTE.bg}; color: #e2e8f0; }
+
+      ::-webkit-scrollbar { width: 4px; height: 4px; }
+      ::-webkit-scrollbar-track { background: ${PALETTE.bg}; }
+      ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 2px; }
+
+      .node-card { transition: border-color 0.4s, box-shadow 0.4s; }
+      .node-card:hover { border-color: #374151 !important; }
+
+      .pulse-dot { animation: pulse-anim 2s ease-in-out infinite; }
+      @keyframes pulse-anim {
+        0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--glow); }
+        50% { opacity: 0.6; box-shadow: 0 0 2px var(--glow); }
+      }
+
+      .event-row { transition: background 0.2s; }
+      .event-row:hover { background: #111827 !important; }
+
+      .btn-primary { transition: opacity 0.15s, transform 0.1s; }
+      .btn-primary:hover:not(:disabled) { opacity: 0.85; transform: translateY(-1px); }
+      .btn-primary:active:not(:disabled) { transform: translateY(0); }
+
+      .scanline {
+        background: repeating-linear-gradient(
+          0deg,
+          transparent,
+          transparent 2px,
+          rgba(0,0,0,0.04) 2px,
+          rgba(0,0,0,0.04) 4px
+        );
+        pointer-events: none;
+        position: fixed; inset: 0; z-index: 999;
+      }
+
+      .entry-flash { animation: flash-in 0.4s ease; }
+      @keyframes flash-in {
+        from { background: rgba(74, 222, 128, 0.08); }
+        to   { background: transparent; }
+      }
+
+      .tab-btn { transition: color 0.15s, border-color 0.15s; }
+
+      input[type=range] { accent-color: #4f46e5; }
+      textarea { outline: none; }
+      textarea:focus { border-color: #4f46e5 !important; box-shadow: 0 0 0 2px rgba(79,70,229,0.2); }
+    `;
+
+    function Sep() {
+      return <div style={{ width: 1, height: 20, background: PALETTE.border }} />;
+    }
+
+    function Metric({ label, value, color }) {
+      return (
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 8, color: '#374151', letterSpacing: '0.15em' }}>{label}</div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 13, fontWeight: 600, color }}>{value}</div>
+        </div>
+      );
+    }
+
+    function SectionLabel({ children }) {
+      return (
+        <div style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: '0.18em', color: '#374151' }}>
+          {children}
+        </div>
+      );
+    }
+
+    function MiniStat({ label, value }) {
+      return (
+        <div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 8, color: '#374151', letterSpacing: '0.1em' }}>{label}</div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: '#6b7280' }}>{value}</div>
+        </div>
+      );
+    }
+
+    function Slider({ label, value, min, max, unit, onChange }) {
+      return (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: '#374151', letterSpacing: '0.1em' }}>{label}</span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: '#6b7280' }}>{value}{unit}</span>
+          </div>
+          <input type="range" min={min} max={max} value={value}
+            onChange={e => onChange(Number(e.target.value))}
+            style={{ width: '100%' }}
+          />
+        </div>
+      );
+    }
+
+    function EventRow({ event, flash }) {
+      const [expanded, setExpanded] = useState(false);
+      const typeStr = typeof event.payload === 'object' ? event.payload?.type : null;
+
+      return (
+        <div
+          className={`event-row ${flash ? 'entry-flash' : ''}`}
+          onClick={() => setExpanded(v => !v)}
+          style={{
+            background: PALETTE.elevated, border: `1px solid ${PALETTE.border}`,
+            borderLeft: `3px solid ${flash ? '#4ade80' : '#1f2937'}`,
+            borderRadius: 5, padding: '7px 12px', cursor: 'pointer',
+            transition: 'border-left-color 0.5s',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: '#4f46e5', minWidth: 64, fontWeight: 600 }}>
+              LSN {String(event.lsn).padStart(4, '0')}
+            </span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: '#374151', minWidth: 20 }}>
+              T{event.term}
+            </span>
+            {typeStr && (
+              <span style={{
+                fontFamily: FONT_MONO, fontSize: 9, color: '#7c3aed',
+                background: '#1e1b4b', padding: '1px 6px', borderRadius: 3, letterSpacing: '0.05em',
+              }}>
+                {typeStr}
+              </span>
+            )}
+            <span style={{
+              flex: 1, fontFamily: FONT_MONO, fontSize: 10, color: '#4b5563',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {JSON.stringify(event.payload)}
+            </span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: '#1f2937', whiteSpace: 'nowrap' }}>
+              {new Date(event.timestamp).toISOString().slice(11, 23)}
+            </span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: '#1f2937' }}>
+              {expanded ? '▲' : '▼'}
+            </span>
+          </div>
+          {expanded && (
+            <pre style={{
+              marginTop: 8, padding: '10px 12px', background: PALETTE.bg,
+              borderRadius: 4, fontFamily: FONT_MONO, fontSize: 11, color: '#7dd3fc',
+              lineHeight: 1.6, overflow: 'auto',
+            }}>
+              {JSON.stringify(event.payload, null, 2)}
+            </pre>
+          )}
+        </div>
+      );
+    }
+
+    function EmptyState({ icon, title, sub }) {
+      return (
+        <div style={{ textAlign: 'center', padding: '80px 40px', color: PALETTE.muted }}>
+          <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.3 }}>{icon}</div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 13, color: '#374151', marginBottom: 8 }}>{title}</div>
+          <div style={{ fontFamily: FONT_UI, fontSize: 12, color: '#1f2937', maxWidth: 400, margin: '0 auto' }}>{sub}</div>
+        </div>
+      );
+    }
+
+    function ArchView() {
+      const blocks = [
+        {
+          layer: '01  CLIENT API',
+          color: '#7c3aed',
+          items: [
+            'append(payload) → Promise<{lsn, term, ts, payload}>',
+            'read(fromLSN, limit) → Event[]',
+            'subscribe(cb) → unsubscribe()',
+          ],
+          note: 'Any JSON schema. No migrations. Schema-on-read.',
+        },
+        {
+          layer: '02  RAFT CONSENSUS (CP)',
+          color: '#4f46e5',
+          items: [
+            'Leader election — randomized timeouts, quorum voting',
+            'Log replication — AppendEntries RPC, heartbeat keepalive',
+            'Commit rule — majority quorum (⌊N/2⌋+1 nodes)',
+            'Safety — only log-complete nodes can be elected leader',
+          ],
+          note: 'Strong consistency: all reads see all prior committed writes.',
+        },
+        {
+          layer: '03  APPEND-ONLY LOG',
+          color: '#2563eb',
+          items: [
+            'Immutable entries — LSN (Log Sequence Number) primary key',
+            'Entry: { lsn, term, timestamp, payload }',
+            'Sequential write path — O(1) append, no B-tree overhead',
+            'Sequential read path — O(1) slice by LSN range',
+          ],
+          note: 'Target storage: OPFS (Origin Private File System) in browser → memory-mapped file segments on server.',
+        },
+        {
+          layer: '04  TRANSPORT (PLUGGABLE)',
+          color: '#0891b2',
+          items: [
+            'In-memory bus (this demo) — same-process, configurable delay/loss',
+            'BroadcastChannel — multi-tab, same-origin browser',
+            'WebRTC DataChannel — peer-to-peer, browser-to-browser',
+            'WebSocket relay — hybrid, browser ↔ server nodes',
+          ],
+          note: 'Swap transport without touching consensus or storage logic.',
+        },
+        {
+          layer: '05  BROWSER PERSISTENCE (OPFS)',
+          color: '#0f766e',
+          items: [
+            'Origin Private File System — synchronous file I/O in Worker',
+            'Log segments as flat binary files (e.g. 64MB each)',
+            'Index file: LSN → byte offset within segment',
+            'fsync on commit boundary — durability without IndexedDB overhead',
+          ],
+          note: 'OPFS gives ~10× faster sequential writes vs IndexedDB.',
+        },
+      ];
+
+      return (
+        <div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: '#374151', letterSpacing: '0.15em', marginBottom: 20 }}>
+            SYSTEM ARCHITECTURE  •  CHRONICLEDB  •  RAFT-BASED DISTRIBUTED EVENT LOG
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {blocks.map(b => (
+              <div key={b.layer} style={{
+                background: PALETTE.elevated, border: `1px solid ${PALETTE.border}`,
+                borderLeft: `4px solid ${b.color}`, borderRadius: 6, padding: '14px 16px',
+              }}>
+                <div style={{ fontFamily: FONT_MONO, fontWeight: 600, fontSize: 11, color: b.color, letterSpacing: '0.1em', marginBottom: 10 }}>
+                  {b.layer}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
+                  {b.items.map((item, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: b.color, opacity: 0.5, marginTop: 1 }}>›</span>
+                      <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: '#6b7280', lineHeight: 1.5 }}>{item}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{
+                  fontFamily: FONT_UI, fontSize: 11, color: '#374151',
+                  background: PALETTE.bg, padding: '6px 10px', borderRadius: 4,
+                  borderLeft: `2px solid ${b.color}40`,
+                }}>
+                  {b.note}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{
+            marginTop: 20, padding: '14px 16px', background: PALETTE.elevated,
+            border: `1px solid ${PALETTE.border}`, borderRadius: 6,
+            fontFamily: FONT_MONO, fontSize: 10, color: '#374151', lineHeight: 2,
+          }}>
+            <div style={{ color: '#4f46e5', marginBottom: 8, letterSpacing: '0.1em' }}>SCALING PATH</div>
+            <div>Single node → Add nodes (odd count: 3, 5, 7) → Partitioned log (topic sharding, each shard its own Raft group)</div>
+            <div>Leader handles writes → Followers serve sequential reads from local log → OPFS segments replicated across all nodes</div>
+            <div>Production transport: WebRTC mesh (browser clusters) or TCP+TLS (server clusters) with the same Raft layer</div>
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [nodeStatus, setNodeStatus]   = useState([]);
+      const [events, setEvents]           = useState([]);
+      const [sysLog, setSysLog]           = useState([]);
+      const [payload, setPayload]         = useState(JSON.stringify(SAMPLES[0], null, 2));
+      const [networkDelay, setNetworkDelay] = useState(25);
+      const [dropPct, setDropPct]         = useState(0);
+      const [partitioned, setPartitioned] = useState(new Set());
+      const [writing, setWriting]         = useState(false);
+      const [tab, setTab]                 = useState('events');
+      const [writeStats, setWriteStats]   = useState({ count: 0, totalMs: 0, lastMs: null });
+      const [flashLSN, setFlashLSN]       = useState(null);
+
+      const clusterRef  = useRef(null);
+      const logEndRef   = useRef(null);
+      const nextFlashTimer = useRef(null);
+
+      const addLog = useCallback((msg, type = 'info') => {
+        const ts = new Date().toISOString().slice(11, 23);
+        setSysLog(l => [{ ts, msg, type, id: crypto.randomUUID?.() ?? Math.random() }, ...l].slice(0, 150));
+      }, []);
+
+      const refresh = useCallback(() => {
+        const c = clusterRef.current;
+        if (!c) return;
+        setNodeStatus(c.status());
+        const leader = c.getLeader();
+        if (leader) setEvents([...leader.applied].reverse());
+      }, []);
+
+      useEffect(() => {
+        addLog('ChronicleDB v1.0  initializing 3-node cluster…', 'info');
+        clusterRef.current = new Cluster(3, refresh);
+
+        const poll = setInterval(refresh, 250);
+        setTimeout(() => addLog('Leader election underway — awaiting quorum…', 'info'), 100);
+        setTimeout(() => { refresh(); addLog('Cluster online  ✓  ready for writes', 'success'); }, 3200);
+
+        return () => { clearInterval(poll); clusterRef.current?.destroy(); };
+      }, []);
+
+      const handleWrite = async () => {
+        if (writing) return;
+
+        let parsed;
+        try { parsed = JSON.parse(payload); }
+        catch { addLog('Payload is not valid JSON', 'error'); return; }
+
+        setWriting(true);
+        const t0 = performance.now();
+
+        try {
+          const entry  = await clusterRef.current.append(parsed);
+          const latMs  = Math.round(performance.now() - t0);
+          setWriteStats(s => ({ count: s.count + 1, totalMs: s.totalMs + latMs, lastMs: latMs }));
+          addLog(`committed  LSN=${entry.lsn}  term=${entry.term}  Δt=${latMs}ms`, 'success');
+
+          clearTimeout(nextFlashTimer.current);
+          setFlashLSN(entry.lsn);
+          nextFlashTimer.current = setTimeout(() => setFlashLSN(null), 600);
+
+          refresh();
+          setTab('events');
+        } catch (e) {
+          addLog(`write failed: ${e.message}`, 'error');
+        } finally {
+          setWriting(false);
+        }
+      };
+
+      const togglePartition = (id) => {
+        setPartitioned(prev => {
+          const next = new Set(prev);
+          if (next.has(id)) {
+            next.delete(id);
+            clusterRef.current.heal(id);
+            addLog(`partition healed  node=${id}  rejoining cluster`, 'success');
+          } else {
+            next.add(id);
+            clusterRef.current.partition(id);
+            addLog(`network partition  node=${id}  isolated`, 'warn');
+          }
+          return next;
+        });
+      };
+
+      const randomPayload = () => {
+        const s = SAMPLES[Math.floor(Math.random() * SAMPLES.length)];
+        setPayload(JSON.stringify({ ...s, _ts: Date.now() }, null, 2));
+      };
+
+      const leader   = nodeStatus.find(s => s.state === 'leader');
+      const avgMs    = writeStats.count > 0 ? Math.round(writeStats.totalMs / writeStats.count) : null;
+      const totalEvt = leader?.appliedCount ?? 0;
+
+      const stateColor = (state, part) => {
+        if (part) return { bg: '#1a0a0a', border: '#7f1d1d', text: '#f87171', glow: '#ef4444' };
+        return PALETTE[state] ?? PALETTE.follower;
+      };
+
+      return (
+        <>
+          <style>{css}</style>
+          <div className="scanline" />
+
+          <div style={{ fontFamily: FONT_UI, background: PALETTE.bg, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+
+            {/* ── Top Bar ── */}
+            <header style={{
+              background: PALETTE.surface, borderBottom: `1px solid ${PALETTE.border}`,
+              padding: '0 20px', height: 52, display: 'flex', alignItems: 'center', gap: 20,
+              position: 'sticky', top: 0, zIndex: 50,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                  <polygon points="14,2 26,8 26,20 14,26 2,20 2,8" fill="none" stroke="#4f46e5" strokeWidth="1.5"/>
+                  <polygon points="14,7 21,11 21,17 14,21 7,17 7,11" fill="none" stroke="#4f46e5" strokeWidth="1" opacity="0.5"/>
+                  <circle cx="14" cy="14" r="2.5" fill="#4f46e5"/>
+                </svg>
+                <div>
+                  <div style={{ fontFamily: FONT_MONO, fontWeight: 600, fontSize: 14, letterSpacing: '0.08em', color: '#c7d2fe' }}>
+                    ChronicleDB
+                  </div>
+                  <div style={{ fontFamily: FONT_MONO, fontSize: 9, color: '#4b5563', letterSpacing: '0.15em' }}>
+                    DISTRIBUTED EVENT LOG  •  RAFT CP
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ flex: 1 }} />
+
+              <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+                <Metric label="NODES"  value={nodeStatus.length || 3}  color="#6366f1" />
+                <Sep />
+                <Metric label="LEADER" value={leader?.id ?? '–'}       color="#4ade80" />
+                <Metric label="TERM"   value={leader?.term ?? '–'}      color="#4ade80" />
+                <Sep />
+                <Metric label="EVENTS" value={totalEvt}                  color="#60a5fa" />
+                <Metric label="AVG WR" value={avgMs != null ? `${avgMs}ms` : '–'} color="#fbbf24" />
+              </div>
+            </header>
+
+            <div style={{ flex: 1, display: 'flex', overflow: 'hidden', height: 'calc(100vh - 52px)' }}>
+
+              {/* ── Left Sidebar ── */}
+              <aside style={{
+                width: 300, background: PALETTE.surface, borderRight: `1px solid ${PALETTE.border}`,
+                display: 'flex', flexDirection: 'column', overflow: 'hidden',
+              }}>
+
+                <section style={{ padding: '14px 14px 0' }}>
+                  <SectionLabel>CLUSTER NODES</SectionLabel>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+                    {(nodeStatus.length ? nodeStatus : [{id:'N1'},{id:'N2'},{id:'N3'}]).map(s => {
+                      const isPart = partitioned.has(s.id);
+                      const c      = stateColor(s.state, isPart);
+                      return (
+                        <div key={s.id} className="node-card" style={{
+                          background: c.bg, border: `1px solid ${c.border}`,
+                          borderRadius: 8, padding: '10px 12px',
+                          boxShadow: s.state === 'leader' ? `0 0 12px ${c.border}30` : 'none',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div
+                                className="pulse-dot"
+                                style={{
+                                  '--glow': c.glow,
+                                  width: 7, height: 7, borderRadius: '50%',
+                                  background: c.glow,
+                                }}
+                              />
+                              <span style={{ fontFamily: FONT_MONO, fontWeight: 600, fontSize: 13 }}>{s.id}</span>
+                              <span style={{
+                                fontFamily: FONT_MONO, fontSize: 9, letterSpacing: '0.1em',
+                                color: c.text, background: `${c.glow}18`, padding: '2px 6px', borderRadius: 3,
+                              }}>
+                                {isPart ? 'ISOLATED' : (s.state ?? '…').toUpperCase()}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => togglePartition(s.id)}
+                              style={{
+                                fontFamily: FONT_MONO, fontSize: 9, padding: '2px 7px', borderRadius: 4,
+                                cursor: 'pointer', letterSpacing: '0.05em',
+                                background: 'transparent',
+                                border: `1px solid ${isPart ? '#ef4444' : PALETTE.muted}`,
+                                color: isPart ? '#f87171' : '#6b7280',
+                              }}
+                            >
+                              {isPart ? 'HEAL' : 'SPLIT'}
+                            </button>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6 }}>
+                            <MiniStat label="TERM"   value={s.term ?? '–'} />
+                            <MiniStat label="LOG"    value={s.logLength ?? 0} />
+                            <MiniStat label="COMMIT" value={s.commitIndex >= 0 ? s.commitIndex : '–'} />
+                            <MiniStat label="APPLD"  value={s.appliedCount ?? 0} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <section style={{ padding: '14px', borderTop: `1px solid ${PALETTE.border}`, marginTop: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <SectionLabel>APPEND EVENT</SectionLabel>
+                    <button
+                      onClick={randomPayload}
+                      style={{
+                        fontFamily: FONT_MONO, fontSize: 9, padding: '2px 7px', borderRadius: 4,
+                        cursor: 'pointer', background: 'transparent',
+                        border: `1px solid ${PALETTE.muted}`, color: '#6b7280',
+                        letterSpacing: '0.05em',
+                      }}
+                    >
+                      SAMPLE
+                    </button>
+                  </div>
+                  <textarea
+                    value={payload}
+                    onChange={e => setPayload(e.target.value)}
+                    spellCheck={false}
+                    style={{
+                      width: '100%', height: 110, fontFamily: FONT_MONO, fontSize: 10.5,
+                      background: PALETTE.bg, border: `1px solid ${PALETTE.border}`,
+                      color: '#7dd3fc', padding: '8px 10px', borderRadius: 6, resize: 'none',
+                      lineHeight: 1.6, transition: 'border-color 0.2s, box-shadow 0.2s',
+                    }}
+                  />
+                  <button
+                    className="btn-primary"
+                    onClick={handleWrite}
+                    disabled={writing || !leader}
+                    style={{
+                      width: '100%', marginTop: 8, padding: '9px 0', borderRadius: 6,
+                      cursor: writing || !leader ? 'not-allowed' : 'pointer',
+                      background: writing ? PALETTE.dim : 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+                      border: 'none', color: '#fff',
+                      fontFamily: FONT_MONO, fontWeight: 600, fontSize: 12, letterSpacing: '0.08em',
+                      opacity: !leader ? 0.4 : 1,
+                    }}
+                  >
+                    {writing ? '⏳  COMMITTING…' : '⚡  APPEND TO LOG'}
+                  </button>
+                  {!leader && (
+                    <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: '#d97706', marginTop: 5, textAlign: 'center' }}>
+                      awaiting leader election…
+                    </div>
+                  )}
+                  {writeStats.lastMs != null && (
+                    <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: '#4ade80', marginTop: 4, textAlign: 'right' }}>
+                      last write: {writeStats.lastMs}ms  •  total: {writeStats.count}
+                    </div>
+                  )}
+                </section>
+
+                <section style={{ padding: '0 14px 14px', marginTop: 'auto', borderTop: `1px solid ${PALETTE.border}`, paddingTop: 14 }}>
+                  <SectionLabel style={{ marginBottom: 10 }}>NETWORK CHAOS</SectionLabel>
+                  <Slider
+                    label="LATENCY"
+                    value={networkDelay} min={0} max={800} unit="ms"
+                    onChange={v => { setNetworkDelay(v); clusterRef.current?.setDelay(v); }}
+                  />
+                  <Slider
+                    label="PACKET LOSS"
+                    value={dropPct} min={0} max={80} unit="%"
+                    onChange={v => { setDropPct(v); clusterRef.current?.setDropRate(v / 100); }}
+                  />
+                </section>
+              </aside>
+
+              {/* ── Main Panel ── */}
+              <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+                <div style={{
+                  display: 'flex', gap: 0, borderBottom: `1px solid ${PALETTE.border}`,
+                  background: PALETTE.surface, padding: '0 4px',
+                }}>
+                  {[
+                    { key: 'events', label: 'EVENT STREAM' },
+                    { key: 'syslog', label: 'SYSTEM LOG' },
+                    { key: 'arch',   label: 'ARCHITECTURE' },
+                  ].map(t => (
+                    <button
+                      key={t.key}
+                      className="tab-btn"
+                      onClick={() => setTab(t.key)}
+                      style={{
+                        padding: '10px 18px', border: 'none', background: 'transparent',
+                        cursor: 'pointer', fontFamily: FONT_MONO, fontSize: 10,
+                        letterSpacing: '0.1em',
+                        color: tab === t.key ? '#c7d2fe' : '#4b5563',
+                        borderBottom: `2px solid ${tab === t.key ? '#6366f1' : 'transparent'}`,
+                      }}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                  <div style={{ flex: 1 }} />
+                  {tab === 'events' && (
+                    <div style={{ display: 'flex', alignItems: 'center', paddingRight: 16,
+                      fontFamily: FONT_MONO, fontSize: 10, color: '#374151' }}>
+                      {events.length} entries  •  click to expand
+                    </div>
+                  )}
+                </div>
+
+                {tab === 'events' && (
+                  <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px' }}>
+                    {events.length === 0 ? (
+                      <EmptyState
+                        icon="⬡"
+                        title="Event log is empty"
+                        sub="Append events using the panel on the left. Each committed write becomes an immutable entry in the global log."
+                      />
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                        {events.map(e => (
+                          <EventRow key={e.lsn} event={e} flash={e.lsn === flashLSN} />
+                        ))}
+                      </div>
+                    )}
+                    <div ref={logEndRef} />
+                  </div>
+                )}
+
+                {tab === 'syslog' && (
+                  <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px', fontFamily: FONT_MONO }}>
+                    {sysLog.length === 0 ? (
+                      <EmptyState icon="🖥" title="No system log entries yet" sub="Cluster events will appear here." />
+                    ) : (
+                      sysLog.map(entry => (
+                        <div key={entry.id} style={{
+                          fontSize: 11, padding: '3px 0',
+                          borderBottom: `1px solid ${PALETTE.dim}`,
+                          color: entry.type === 'error' ? PALETTE.error
+                               : entry.type === 'success' ? PALETTE.success
+                               : entry.type === 'warn' ? PALETTE.warn
+                               : '#4b5563',
+                        }}>
+                          <span style={{ color: '#1f2937', marginRight: 10 }}>{entry.ts}</span>
+                          {entry.msg}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {tab === 'arch' && (
+                  <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
+                    <ArchView />
+                  </div>
+                )}
+              </main>
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
