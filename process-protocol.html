@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Process Protocol — dizzy</title>
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/base16/tomorrow-night.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Share+Tech+Mono&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --cmd:   #93C5FD;  --cmd-b:  #2563EB;  --cmd-t:  #1e3a5f;
+      --evt:   #86EFAC;  --evt-b:  #16A34A;  --evt-t:  #14532d;
+      --proc:  #FCA34D;  --proc-b: #EA580C;  --proc-t: #431407;
+      --pol:   #F9A8D4;  --pol-b:  #DB2777;  --pol-t:  #500724;
+      --bg:    #0f172a;
+      --panel: #1e293b;
+      --panel2:#263347;
+      --border:#334155;
+      --muted: #64748b;
+      --text:  #e2e8f0;
+      --sub:   #94a3b8;
+      --mono:  'IBM Plex Mono', 'Share Tech Mono', 'Courier New', monospace;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+    }
+
+    /* ─── Deck shell ─── */
+    #deck {
+      width: 100%; height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ─── Top bar ─── */
+    #topbar {
+      flex-shrink: 0;
+      height: 44px;
+      background: rgba(15,23,42,0.95);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 12px;
+    }
+    #topbar a {
+      color: var(--sub);
+      text-decoration: none;
+      font-size: 11px;
+      border: 1px solid var(--border);
+      padding: 3px 8px;
+      border-radius: 4px;
+      transition: color .15s, border-color .15s;
+    }
+    #topbar a:hover { color: var(--text); border-color: var(--sub); }
+    #topbar .title { flex: 1; font-size: 12px; color: var(--sub); }
+    #slide-counter { font-size: 11px; color: var(--muted); }
+
+    /* ─── Slides viewport ─── */
+    #viewport {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ─── Nav buttons ─── */
+    .nav-btn {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(30,41,59,0.85);
+      border: 1px solid var(--border);
+      color: var(--sub);
+      font-family: var(--mono);
+      font-size: 18px;
+      width: 40px;
+      height: 60px;
+      border-radius: 6px;
+      cursor: pointer;
+      z-index: 100;
+      transition: color .15s, border-color .15s, background .15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .nav-btn:hover { color: var(--text); border-color: var(--sub); background: var(--panel); }
+    #btn-prev { left: 8px; }
+    #btn-next { right: 8px; }
+    .nav-btn:disabled { opacity: 0.25; cursor: default; }
+
+    /* ─── Slide ─── */
+    .slide {
+      position: absolute;
+      inset: 0;
+      padding: 48px 80px 48px 80px;
+      overflow-y: auto;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .slide.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* ─── Slide: title ─── */
+    .slide-title { text-align: center; justify-content: center; align-items: center; }
+    .slide-title h1 {
+      font-size: clamp(28px, 4vw, 52px);
+      font-weight: 600;
+      letter-spacing: -0.5px;
+      line-height: 1.15;
+    }
+    .slide-title .sub {
+      font-size: clamp(13px, 1.5vw, 18px);
+      color: var(--sub);
+      margin-top: 12px;
+    }
+    .slide-title .tag-row {
+      display: flex; gap: 10px; justify-content: center; margin-top: 24px; flex-wrap: wrap;
+    }
+
+    /* ─── Slide heading ─── */
+    .slide h2 {
+      font-size: clamp(18px, 2.5vw, 28px);
+      font-weight: 600;
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+      flex-shrink: 0;
+    }
+    .slide h3 {
+      font-size: 13px;
+      color: var(--sub);
+      font-weight: 400;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    /* ─── Prose ─── */
+    .prose {
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--sub);
+      max-width: 72ch;
+    }
+    .prose strong { color: var(--text); }
+
+    /* ─── Tags / chips ─── */
+    .chip {
+      display: inline-block;
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 5px;
+      border: 1.5px solid;
+      white-space: nowrap;
+    }
+    .chip.cmd  { background: var(--cmd);  border-color: var(--cmd-b);  color: var(--cmd-t); }
+    .chip.evt  { background: var(--evt);  border-color: var(--evt-b);  color: var(--evt-t); }
+    .chip.proc { background: var(--proc); border-color: var(--proc-b); color: var(--proc-t); }
+    .chip.pol  { background: var(--pol);  border-color: var(--pol-b);  color: var(--pol-t); }
+    .chip.neutral { background: var(--panel2); border-color: var(--border); color: var(--sub); }
+
+    /* ─── Code blocks ─── */
+    .code-wrap {
+      background: #111827;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .code-label {
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 6px 14px;
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .code-wrap pre {
+      margin: 0;
+      padding: 16px 18px;
+      overflow-x: auto;
+      font-size: clamp(10px, 1.1vw, 13px);
+      line-height: 1.6;
+    }
+    .code-wrap code { font-family: var(--mono) !important; }
+
+    /* ─── Annotation overlay marks in code (spans inside pre) ─── */
+    .ann { position: relative; }
+    .ann-cmd  { background: rgba(147,197,253,0.18); border-radius: 3px; outline: 1px solid rgba(147,197,253,0.45); }
+    .ann-evt  { background: rgba(134,239,172,0.18); border-radius: 3px; outline: 1px solid rgba(134,239,172,0.45); }
+    .ann-proc { background: rgba(252,163,77,0.18);  border-radius: 3px; outline: 1px solid rgba(252,163,77,0.45); }
+    .ann-pol  { background: rgba(249,168,212,0.18); border-radius: 3px; outline: 1px solid rgba(249,168,212,0.45); }
+
+    /* ─── Two-column layout ─── */
+    .cols { display: grid; gap: 20px; flex: 1; min-height: 0; }
+    .cols-2 { grid-template-columns: 1fr 1fr; }
+    .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+    /* ─── Panel box ─── */
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .panel h4 {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel p { font-size: 12px; color: var(--sub); line-height: 1.6; }
+    .panel code {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--bg);
+      padding: 2px 5px;
+      border-radius: 3px;
+      color: var(--evt);
+    }
+
+    /* ─── Pipeline diagram ─── */
+    .pipeline {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .pipe-node {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 16px;
+      font-size: 12px;
+      text-align: center;
+      min-width: 120px;
+    }
+    .pipe-node.accent { border-color: var(--proc-b); background: rgba(252,163,77,0.1); color: var(--proc); }
+    .pipe-node.verify { border-color: var(--evt-b);  background: rgba(134,239,172,0.1); color: var(--evt); }
+    .pipe-arrow {
+      color: var(--muted);
+      font-size: 18px;
+      padding: 0 6px;
+    }
+    .pipe-fork {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .pipe-fork .pipe-node { min-width: 160px; font-size: 11px; }
+
+    /* ─── Math stats ─── */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 16px;
+    }
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+    }
+    .stat .num {
+      font-size: clamp(28px, 3.5vw, 44px);
+      font-weight: 600;
+      line-height: 1;
+    }
+    .stat .label {
+      font-size: 11px;
+      color: var(--sub);
+      margin-top: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .stat.cmd-stat  .num { color: var(--cmd); }
+    .stat.evt-stat  .num { color: var(--evt); }
+    .stat.proc-stat .num { color: var(--proc); }
+    .stat.pol-stat  .num { color: var(--pol); }
+    .stat.total     .num { color: var(--text); }
+
+    .formula {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      font-size: 13px;
+      color: var(--sub);
+      line-height: 2;
+    }
+    .formula strong { color: var(--text); }
+    .formula .highlight { color: var(--proc); }
+
+    /* ─── Future timeline ─── */
+    .timeline { display: flex; flex-direction: column; gap: 0; }
+    .tl-item {
+      display: grid;
+      grid-template-columns: 100px 1fr;
+      gap: 16px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .tl-item:last-child { border-bottom: none; }
+    .tl-when { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; padding-top: 2px; }
+    .tl-what h4 { font-size: 13px; color: var(--text); margin-bottom: 4px; }
+    .tl-what p  { font-size: 12px; color: var(--sub); line-height: 1.6; }
+
+    /* ─── Scrollbar ─── */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ─── Responsive: small screens collapse cols ─── */
+    @media (max-width: 700px) {
+      .slide { padding: 32px 20px 32px 20px; }
+      .cols-2, .cols-3 { grid-template-columns: 1fr; }
+      #btn-prev { left: 2px; }
+      #btn-next { right: 2px; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="deck">
+  <!-- ─── Top bar ─── -->
+  <div id="topbar">
+    <a href="index.html">← back</a>
+    <span class="title">process protocol / dizzy</span>
+    <span id="slide-counter">1 / 14</span>
+  </div>
+
+  <!-- ─── Viewport ─── -->
+  <div id="viewport">
+    <button class="nav-btn" id="btn-prev" disabled>&#8592;</button>
+    <button class="nav-btn" id="btn-next">&#8594;</button>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SLIDE 1 — Title
+    ══════════════════════════════════════════════════════════ -->
+    <div class="slide slide-title active" data-slide="1">
+      <h1>The<br/>Process Protocol</h1>
+      <div class="sub">
+        a single function signature that makes every dizzy<br/>
+        procedure and policy hyper-portable across transport mechanisms
+      </div>
+      <div class="tag-row">
+        <span class="chip cmd">Command</span>
+        <span class="chip proc">Procedure</span>
+        <span class="chip evt">Event</span>
+        <span class="chip pol">Policy</span>
+        <span class="chip neutral">Abstract IR</span>
+        <span class="chip neutral">IaC</span>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SLIDE 2 — The Shape
+    ══════════════════════════════════════════════════════════ -->
+    <div class="slide" data-slide="2">
+      <h2>The Shape</h2>
+      <div class="prose">
+        Every dizzy process — procedure or policy — is just a function with two arguments:
+        an <strong>input</strong> and a <strong>context</strong>.
+        The context carries an optional <strong>emit</strong> object whose keys are named callback functions.
+        That's the entire contract.
+      </div>
+
+      <div class="code-wrap">
+        <div class="code-label">
+          <span>typescript</span>
+          <span class="chip proc" style="font-size:9px;padding:1px 6px;">process protocol</span>
+        </div>
+        <pre><code class="language-typescript">// The universal Process type
+type Process&lt;
+  Input,
+  Ctx extends { emit?: Record&lt;string, (...args: any[]) =&gt; void&gt; }
+&gt; = (input: Input, ctx: Ctx) =&gt; Promise&lt;void&gt; | void
+
+//  ┌── 1. structured input ──────────────────────────────────────┐
+//  │                                                              │
+//  │   (input: Input,   ctx: Ctx) =&gt; Promise&lt;void&gt; | void        │
+//  │                          │                                   │
+//  │                          └── 2. context with emit callbacks  │
+//  └──────────────────────────────────────────────────────────────┘
+
+// The emit object is the "transport hole":
+//   - in-memory  → ctx.emit.foo(payload)  is a direct function call
+//   - over AMQP  → ctx.emit.foo(payload)  publishes to a queue topic
+//   - over HTTP  → ctx.emit.foo(payload)  POSTs to an endpoint
+//
+// The process itself never knows which transport is in use.</code></pre>
+      </div>
+
+      <div class="cols cols-2">
+        <div class="panel">
+          <h4><span class="chip proc" style="font-size:9px;">Procedure</span> shape</h4>
+          <p>Input is a <strong>command</strong>. Outputs are <strong>events</strong> via <code>emit</code>. Side-effecting work happens inside. Think: scan files, upload a blob, filter a manifest.</p>
+        </div>
+        <div class="panel">
+          <h4><span class="chip pol" style="font-size:9px;">Policy</span> shape</h4>
+          <p>Input is an <strong>event</strong>. Outputs are <strong>commands</strong> via <code>emit</code>. Pure coordination logic — decides what to do next. Think: "scan complete → create manifest".</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SLIDE 3 — Procedure example
+    ══════════════════════════════════════════════════════════ -->
+    <div class="slide" data-slide="3">
+      <h2>Procedure — <span style="color:var(--proc)">partition_scan</span></h2>
+      <div class="prose">
+        A procedure handles a command and emits events. The emit callbacks are injected by the
+        runtime — the function body never touches a queue, socket, or HTTP client.
+      </div>
+
+      <div class="code-wrap">
+        <div class="code-label">
+          <span>typescript</span>
+          <span class="chip cmd" style="font-size:9px;padding:1px 6px;">cmd: start_scan</span>
+          <span style="color:var(--muted);font-size:10px;">→</span>
+          <span class="chip evt" style="font-size:9px;padding:1px 6px;">emits 3 events</span>
+        </div>
+        <pre><code class="language-typescript">import type { Process } from 'dizzy'
+
+interface StartScanInput {
+  rootPath: string            // ← the command payload
+}
+
+interface ScanEmit {
+  scan_item_found  : (item: { path: string; sha256: string }) =&gt; void
+  scan_complete    : () =&gt; void
+  scan_item_failed : (err: { path: string; reason: string }) =&gt; void
+}
+
+export const partitionScan: Process&lt;StartScanInput, { emit: ScanEmit }&gt; =
+  async (input, ctx) =&gt; {
+    for await (const entry of walkDir(input.rootPath)) {
+      try {
+        const sha256 = await hashFile(entry.path)
+        ctx.emit.scan_item_found({ path: entry.path, sha256 })   // ← emit event
+      } catch (err) {
+        ctx.emit.scan_item_failed({ path: entry.path, reason: String(err) })
+      }
+    }
+    ctx.emit.scan_complete()                                       // ← emit event
+  }
+
+// walkDir and hashFile are ordinary utility functions.
+// No queue import. No transport knowledge. Just logic.</code></pre>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SLIDE 4 — Policy example
+    ══════════════════════════════════════════════════════════ -->
+    <div class="slide" data-slide="4">
+      <h2>Policy — <span style="color:var(--pol)">create_image_priority_manifest</span></h2>
+      <div class="prose">
+        A policy reacts to an event and emits commands. It contains <em>no</em> side-effecting work —
+        only the decision of what should happen next. Swap the transport and the logic is identical.
+      </div>
+
+      <div class="code-wrap">
+        <div class="code-label">
+          <span>typescript</span>
+          <span class="chip evt" style="font-size:9px;padding:1px 6px;">evt: scan_complete</span>
+          <span style="color:var(--muted);font-size:10px;">→</span>
+          <span class="chip cmd" style="font-size:9px;padding:1px 6px;">emits 1 command</span>
+        </div>
+        <pre><code class="language-typescript">import type { Process } from 'dizzy'
+
+interface ScanCompleteEvent {
+  scannedItems: Array&lt;{ path: string; sha256: string }&gt;
+}
+
+interface ManifestPolicyEmit {
+  create_image_priority_manifest: (payload: {
+    items: Array&lt;{ path: string; sha256: string }&gt;
+  }) =&gt; void
+}
+
+export const createImagePriorityManifestPolicy: Process&lt;
+  ScanCompleteEvent,
+  { emit: ManifestPolicyEmit }
+&gt; = (input, ctx) =&gt; {
+  // Policy logic: decide to issue a command based on the event
+  if (input.scannedItems.length &gt; 0) {
+    ctx.emit.create_image_priority_manifest({ items: input.scannedItems })
+  }
+  // That's all. No file I/O. No HTTP. No AMQP. Pure coordination.
+}</code></pre>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SLIDE 5 — Portability
+    ══════════════════════════════════════════════════════════ -->
+    <div class="slide" data-slide="5">
+      <h2>Portability — Same Process, Any Transport</h2>
+      <div class="prose">
+        The process function body is <strong>identical</strong> in all three cases below.
+        Only the <em>wiring</em> changes — the construction of the <code>ctx.emit</code> object
+        that is passed in by the runtime.
+      </div>
+
+      <div class="cols cols-3">
+        <div class="panel">
+          <h4>In-Memory</h4>
+          <p>Direct function calls. Used in tests, monoliths, or co-located processes.</p>
+          <div class="code-wrap" style="margin-top:8px;">
+            <pre style="font-size:10px;"><code class="language-typescript">const ctx = {
+  emit: {
+    scan_item_found: (item) =&gt;
+      updateManifest(item),
+    scan_complete: () =&gt;
+      triggerNextStep(),
+  }
+}
+await partitionScan(cmd, ctx)</code></pre>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h4>AMQP Queue</h4>
+          <p>Each emit callback publishes a message. Used across separate containers.</p>
+          <div class="code-wrap" style="margin-top:8px;">
+            <pre style="font-size:10px;"><code class="language-typescript">const ctx = {
+  emit: {
+    scan_item_found: (item) =&gt;
+      ch.publish(
+        'events',
+        'scan_item_found',
+        Buffer.from(JSON.stringify(item))
+      ),
+    scan_complete: () =&gt;
+      ch.publish('events',
+        'scan_complete', Buffer.from('{}')
+      ),
+  }
+}
+await partitionScan(cmd, ctx)</code></pre>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h4>HTTP Webhook</h4>
+          <p>Each emit callback POSTs to an endpoint. Used for external integrations.</p>
+          <div class="code-wrap" style="margin-top:8px;">
+            <pre style="font-size:10px;"><code class="language-typescript">const ctx = {
+  emit: {
+    scan_item_found: (item) =&gt;
+      fetch(WEBHOOK_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          event: 'scan_item_found',
+          payload: item
+        })
+      }),
+    scan_complete: () =&gt;
+      fetch(WEBHOOK_URL, { method: 'POST',
+        body: JSON.stringify({
+          event: 'scan_complete' }) }),
+  }
+}
+await partitionScan(cmd, ctx)</code></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose" style="margin-top:4px;">
+        The transport becomes a <strong>deployment-time decision</strong>, not a code-time decision.
+        This is why the Process Protocol enables automated IaC generation.
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SLIDE 6 — The feat file
+    ══════════════════════════════════════════════════════════ -->
+    <div class="slide" data-slide="6">
+      <h2>The feat file — <span style="color:var(--cmd)">scan_and_upload.feat.yaml</span></h2>
+      <div class="prose">
+        A feature is declared as a YAML file listing commands, events, procedures, and policies
+        with their relationships. This is the input to the entire deployment pipeline.
+      </div>
+
+      <div class="code-wrap">
+        <div class="code-label">
+          <span>yaml</span>
+          <span class="chip cmd" style="font-size:9px;padding:1px 6px;">3 commands</span>
+          <span class="chip evt" style="font-size:9px;padding:1px 6px;">5 events</span>
+          <span class="chip proc" style="font-size:9px;padding:1px 6px;">3 procedures</span>
+          <span class="chip pol" style="font-size:9px;padding:1px 6px;">3 policies</span>
+        </div>
+        <pre><code class="language-yaml">feature: scan_and_upload
+
+commands:
+  start_scan:                        "Initiates a scan to discover files"
+  create_image_priority_manifest:    "Creates a prioritized manifest for upload"
+  upload_blob_using_manifest:        "Uploads a blob using manifest information"
+
+events:
+  scan_item_found:         "Found a file (not folder) while scanning"
+  scan_complete:           "Finished scanning"
+  scan_item_failed:        "Something went wrong reading a single item"
+  priority_manifest_created: "Prioritized manifest successfully created"
+  manifest_upload_started:   "Upload has started for a manifest item"
+
+procedures:
+  partition_scan:
+    description: "Recursively scans directory, hashes each file with SHA256"
+    command: start_scan
+    emits: [scan_item_found, scan_complete, scan_item_failed]
+
+  filter_manifest_by_path_type:
+    description: "Filters manifest by path type to create image priority manifest"
+    command: create_image_priority_manifest
+    emits: [priority_manifest_created]
+
+  begin_manifest_upload:
+    description: "Actually does the uploading and records that upload started"
+    command: upload_blob_using_manifest
+    emits: [manifest_upload_started]
+
+policies:
+  update_partition_manifest:
+    description: "Updates partition manifest when scan items are found"
+    event: scan_item_found
+    emits: []
+
+  create_image_priority_manifest:
+    description: "Issues command to create image priority manifest when scan completes"
+    event: scan_complete
+    emits: [create_image_priority_manifest]
+
+  start_manifest_upload:
+    description: "Unwraps manifest list and generates upload commands for each item"
+    event: priority_manifest_created
+    emits: [upload_blob_using_manifest]</code></pre>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SLIDE 7 — The Pipeline
+    ══════════════════════════════════════════════════════════ -->
+    <div class="slide" data-slide="7">
+      <h2>The Deployment Pipeline</h2>
+      <div class="prose">
+        The feat file never goes directly to IaC. It passes through three progressive stages,
+        each of which can be independently validated. The <strong>Resolved IR</strong> is
+        the human-reviewable checkpoint before any infrastructure code is generated.
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:20px;align-items:center;padding:16px 0;">
+        <div class="pipeline">
+          <div class="pipe-node accent">feat.yaml</div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-node">Stage 1<br/><small style="color:var(--muted);">parse</small></div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-node">Stage 2<br/><small style="color:var(--muted);">locate</small></div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-node verify">Stage 3<br/><small style="color:var(--muted);">resolve</small></div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-fork">
+            <div class="pipe-node" style="border-color:var(--cmd-b);color:var(--cmd);">docker-compose.yml</div>
+            <div class="pipe-node" style="border-color:var(--pol-b);color:var(--pol);">pulumi TypeScript</div>
+            <div class="pipe-node" style="border-color:var(--muted);color:var(--sub);">k8s manifests…</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cols cols-3">
+        <div class="panel">
+          <h4>Stage 1 — Parse</h4>
+          <p>Structural lift from YAML. Enumerates all processes and channels. Channel types are unresolved (<code>?</code>). Validates graph integrity: every subscription has a publisher, no orphan emitters.</p>
+        </div>
+        <div class="panel">
+          <h4>Stage 2 — Locate</h4>
+          <p>Assigns a deployment location to each process (e.g. <code>container/X</code>). Today: one container per process. Future: observational data and preferences drive co-location decisions.</p>
+        </div>
+        <div class="panel">
+          <h4>Stage 3 — Resolve <span class="chip neutral" style="font-size:9px;float:right;">verify here</span></h4>
+          <p>Compares publisher and subscriber locations. Same location → <code>direct</code>. Cross-location → <code>queue</code>. This is the document a human signs off on before IaC is generated.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SLIDE 8 — Stage 1: Unresolved Spec
+    ══════════════════════════════════════════════════════════ -->
+    <div class="slide" data-slide="8">
+      <h2>Stage 1 — Unresolved Deployment Spec</h2>
+      <div class="prose">
+        A direct structural lift from the feat file. Channels are enumerated and publishers are identified,
+        but the <strong>channel type</strong> (queue, direct, http) is not yet determined.
+        The <code>?</code> is a placeholder for Stage 3.
+      </div>
+
+      <div class="code-wrap">
+        <div class="code-label">
+          <span>yaml</span>
+          <span class="chip neutral" style="font-size:9px;padding:1px 6px;">UnresolvedDeploymentSpec</span>
+        </div>
+        <pre><code class="language-yaml">feature: scan_and_upload
+
+processes:
+  - name: partition_scan
+    kind: procedure
+    subscribes_to: { cmd.start_scan: command }
+    publishes:
+      - { evt.scan_item_found: event }
+      - { evt.scan_complete: event }
+      - { evt.scan_item_failed: event }
+
+  - name: update_partition_manifest
+    kind: policy
+    subscribes_to: { evt.scan_item_found: event }
+    publishes: []
+
+  - name: create_image_priority_manifest_policy
+    kind: policy
+    subscribes_to: { evt.scan_complete: event }
+    publishes:
+      - { cmd.create_image_priority_manifest: command }
+
+  # ... 3 more processes (filter_manifest_by_path_type,
+  #     start_manifest_upload_policy, begin_manifest_upload) ...
+
+channels:
+  cmd.start_scan:                     { kind: command, publisher: external,    channel_type: ? }
+  evt.scan_item_found:                { kind: event,   publisher: partition_scan, channel_type: ? }
+  evt.scan_complete:                  { kind: event,   publisher: partition_scan, channel_type: ? }
+  evt.scan_item_failed:               { kind: event,   publisher: partition_scan, channel_type: ? }
+  cmd.create_image_priority_manifest: { kind: command, publisher: create_image_priority_manifest_policy, channel_type: ? }
+  evt.priority_manifest_created:      { kind: event,   publisher: filter_manifest_by_path_type, channel_type: ? }
+  cmd.upload_blob_using_manifest:     { kind: command, publisher: start_manifest_upload_policy,  channel_type: ? }
+  evt.manifest_upload_started:        { kind: event,   publisher: begin_manifest_upload, channel_type: ? }
+
+# Validation checks at this stage:
+#   ✓ every subscribed channel has exactly one publisher (or "external")
+#   ✓ every published channel is subscribed to (no orphan emitters)
+#   ✓ no procedure publishes commands (only policies may)</code></pre>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SLIDE 9 — Stage 2: Location Assignment
+    ══════════════════════════════════════════════════════════ -->
+    <div class="slide" data-slide="9">
+      <h2>Stage 2 — Location Assignment</h2>
+      <div class="prose">
+        Each process is assigned a <strong>location</strong> — a deployment unit identifier.
+        For the Docker Compose MVP, every process gets its own container.
+        In future, a preference/observational data source will inform co-location decisions.
+      </div>
+
+      <div class="cols cols-2">
+        <div class="code-wrap">
+          <div class="code-label">
+            <span>yaml</span>
+            <span class="chip neutral" style="font-size:9px;padding:1px 6px;">LocationAssignedSpec</span>
+          </div>
+          <pre><code class="language-yaml">deployment_target: docker-compose
+# (future: k8s, lambda, fly.io, ...)
+
+process_locations:
+  partition_scan:
+    location: container/partition_scan
+  update_partition_manifest:
+    location: container/update_partition_manifest
+  create_image_priority_manifest_policy:
+    location: container/create_image_priority_manifest_policy
+  filter_manifest_by_path_type:
+    location: container/filter_manifest_by_path_type
+  start_manifest_upload_policy:
+    location: container/start_manifest_upload_policy
+  begin_manifest_upload:
+    location: container/begin_manifest_upload
+
+# Today: 6 processes → 6 containers (trivial assignment)
+# Future: observational data may merge some into shared containers</code></pre>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div class="panel">
+            <h4>Channel type resolution rule</h4>
+            <p>After location assignment, each channel's type is determined by comparing publisher and subscriber locations:</p>
+            <div class="code-wrap" style="margin-top:6px;">
+              <pre style="font-size:10px;"><code class="language-typescript">function resolveChannelType(pub, sub) {
+  if (pub.location === sub.location)
+    return 'direct'    // same container
+  if (pub.host === sub.host)
+    return 'unix-socket'
+  return 'queue'       // cross-container
+}</code></pre>
+            </div>
+          </div>
+          <div class="panel">
+            <h4>Future: observational data</h4>
+            <p>A separate data source (metrics, throughput, cost) can inform whether two processes should share a location. Co-located processes get <code>direct</code> channels — no queue overhead. This is a <strong>deployment topology decision</strong>, not a code change.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SLIDE 10 — Stage 3: Resolved IR
+    ══════════════════════════════════════════════════════════ -->
+    <div class="slide" data-slide="10">
+      <h2>Stage 3 — Resolved Deployment Spec</h2>
+      <div class="prose">
+        All channel types are now concrete. This is the <strong>human-reviewable IR</strong> —
+        the document you verify before any IaC is generated. The IaC renderers
+        have no business logic; they perform pure template substitution from this spec.
+      </div>
+
+      <div class="code-wrap">
+        <div class="code-label">
+          <span>yaml</span>
+          <span class="chip verify" style="background:rgba(134,239,172,0.15);border-color:var(--evt-b);color:var(--evt);font-size:9px;padding:1px 6px;">ResolvedDeploymentSpec ← verify here</span>
+        </div>
+        <pre><code class="language-yaml">feature: scan_and_upload
+broker: { image: rabbitmq:3-management-alpine, name: broker }
+
+services:
+  - name: partition_scan
+    kind: procedure
+    image: scan_and_upload/partition_scan:latest
+    input:
+      channel: cmd.start_scan
+      channel_type: queue          # external publisher → always queue
+    emits:
+      - { channel: evt.scan_item_found,  channel_type: queue }
+      - { channel: evt.scan_complete,    channel_type: queue }
+      - { channel: evt.scan_item_failed, channel_type: queue }
+
+  - name: update_partition_manifest
+    kind: policy
+    image: scan_and_upload/update_partition_manifest:latest
+    input:
+      channel: evt.scan_item_found
+      channel_type: queue          # partition_scan ≠ update_partition_manifest location
+    emits: []
+
+  # ... 4 more services with same pattern ...
+
+channels:
+  - { name: cmd.start_scan,                     kind: command, channel_type: queue, publisher: external,                            subscribers: [partition_scan] }
+  - { name: evt.scan_item_found,                kind: event,   channel_type: queue, publisher: partition_scan,                      subscribers: [update_partition_manifest] }
+  - { name: evt.scan_complete,                  kind: event,   channel_type: queue, publisher: partition_scan,                      subscribers: [create_image_priority_manifest_policy] }
+  - { name: evt.scan_item_failed,               kind: event,   channel_type: queue, publisher: partition_scan,                      subscribers: [] }
+  - { name: cmd.create_image_priority_manifest, kind: command, channel_type: queue, publisher: create_image_priority_manifest_policy, subscribers: [filter_manifest_by_path_type] }
+  - { name: evt.priority_manifest_created,      kind: event,   channel_type: queue, publisher: filter_manifest_by_path_type,        subscribers: [start_manifest_upload_policy] }
+  - { name: cmd.upload_blob_using_manifest,     kind: command, channel_type: queue, publisher: start_manifest_upload_policy,        subscribers: [begin_manifest_upload] }
+  - { name: evt.manifest_upload_started,        kind: event,   channel_type: queue, publisher: begin_manifest_upload,               subscribers: [] }</code></pre>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SLIDE 11 — The Math
+    ══════════════════════════════════════════════════════════ -->
+    <div class="slide" data-slide="11">
+      <h2>The Math — <span style="color:var(--sub)">scan_and_upload</span></h2>
+
+      <div class="stat-grid">
+        <div class="stat proc-stat">
+          <div class="num">3</div>
+          <div class="label">Procedures</div>
+        </div>
+        <div class="stat pol-stat">
+          <div class="num">3</div>
+          <div class="label">Policies</div>
+        </div>
+        <div class="stat total">
+          <div class="num">6</div>
+          <div class="label">Process Services</div>
+        </div>
+        <div class="stat cmd-stat">
+          <div class="num">3</div>
+          <div class="label">Command channels</div>
+        </div>
+        <div class="stat evt-stat">
+          <div class="num">5</div>
+          <div class="label">Event channels</div>
+        </div>
+        <div class="stat total">
+          <div class="num">8</div>
+          <div class="label">Queue topics</div>
+        </div>
+        <div class="stat total">
+          <div class="num">1</div>
+          <div class="label">Broker (RabbitMQ)</div>
+        </div>
+        <div class="stat total">
+          <div class="num" style="color:var(--proc);">7</div>
+          <div class="label">Total containers</div>
+        </div>
+        <div class="stat total">
+          <div class="num">7</div>
+          <div class="label">Subscription bindings</div>
+        </div>
+      </div>
+
+      <div class="formula">
+        <strong>Per-service Docker Compose env vars:</strong><br/>
+        <span class="highlight">BROKER_URL</span>        = amqp://broker<br/>
+        <span class="highlight">INPUT_QUEUE</span>       = &lt;input.channel&gt;<br/>
+        <span class="highlight">EMIT_&lt;name&gt;</span>  = &lt;channel_name&gt;   <em style="color:var(--muted);">— one per emitted channel</em><br/><br/>
+        <strong>General formula:</strong>&nbsp;
+        <em style="color:var(--sub);">N procedures + M policies = N+M services + 1 broker = N+M+1 containers</em><br/>
+        <em style="color:var(--sub);">env vars per service = 1 (broker) + 1 (input) + |emits| (outputs)</em>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SLIDE 12 — Generated: Docker Compose
+    ══════════════════════════════════════════════════════════ -->
+    <div class="slide" data-slide="12">
+      <h2>Generated — <span style="color:var(--cmd)">docker-compose.yml</span></h2>
+      <div class="prose">
+        Mechanically rendered from the Resolved IR. The renderer has <strong>no business logic</strong>
+        — it performs template substitution. Three of six services shown; the rest follow an identical pattern.
+      </div>
+
+      <div class="code-wrap">
+        <div class="code-label">
+          <span>yaml</span>
+          <span class="chip neutral" style="font-size:9px;padding:1px 6px;">generated from ResolvedDeploymentSpec</span>
+        </div>
+        <pre><code class="language-yaml">version: "3.9"
+
+services:
+  broker:
+    image: rabbitmq:3-management-alpine
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      retries: 5
+
+  partition_scan:                        # procedure — handles cmd.start_scan
+    image: scan_and_upload/partition_scan:latest
+    environment:
+      BROKER_URL: amqp://broker
+      INPUT_QUEUE: cmd.start_scan
+      EMIT_scan_item_found: evt.scan_item_found
+      EMIT_scan_complete:   evt.scan_complete
+      EMIT_scan_item_failed: evt.scan_item_failed
+    depends_on:
+      broker: { condition: service_healthy }
+    restart: unless-stopped
+
+  update_partition_manifest:             # policy — handles evt.scan_item_found
+    image: scan_and_upload/update_partition_manifest:latest
+    environment:
+      BROKER_URL: amqp://broker
+      INPUT_QUEUE: evt.scan_item_found
+    depends_on:
+      broker: { condition: service_healthy }
+    restart: unless-stopped
+
+  create_image_priority_manifest_policy: # policy — handles evt.scan_complete
+    image: scan_and_upload/create_image_priority_manifest_policy:latest
+    environment:
+      BROKER_URL: amqp://broker
+      INPUT_QUEUE: evt.scan_complete
+      EMIT_create_image_priority_manifest: cmd.create_image_priority_manifest
+    depends_on:
+      broker: { condition: service_healthy }
+    restart: unless-stopped
+
+  # filter_manifest_by_path_type, start_manifest_upload_policy,
+  # begin_manifest_upload  — same pattern, omitted for brevity</code></pre>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SLIDE 13 — Generated: Pulumi TypeScript
+    ══════════════════════════════════════════════════════════ -->
+    <div class="slide" data-slide="13">
+      <h2>Generated — <span style="color:var(--pol)">Pulumi TypeScript</span></h2>
+      <div class="prose">
+        The same Resolved IR rendered as Pulumi code. Each service becomes a
+        <code>docker.Container</code> resource. The env vars are identical — only the
+        host language changes. Two of six services shown.
+      </div>
+
+      <div class="code-wrap">
+        <div class="code-label">
+          <span>typescript</span>
+          <span class="chip neutral" style="font-size:9px;padding:1px 6px;">generated from ResolvedDeploymentSpec</span>
+        </div>
+        <pre><code class="language-typescript">import * as pulumi from "@pulumi/pulumi";
+import * as docker from "@pulumi/docker";
+
+// One shared network for all services in this feature
+const net = new docker.Network("scan_and_upload");
+
+// Broker — always first, services depend on it
+const broker = new docker.Container("broker", {
+  image: "rabbitmq:3-management-alpine",
+  networksAdvanced: [{ name: net.name }],
+  name: "broker",
+});
+
+// Generated per service from ResolvedDeploymentSpec.services[]
+const partitionScan = new docker.Container("partition_scan", {
+  image: "scan_and_upload/partition_scan:latest",
+  networksAdvanced: [{ name: net.name }],
+  envs: [
+    "BROKER_URL=amqp://broker",
+    "INPUT_QUEUE=cmd.start_scan",
+    "EMIT_scan_item_found=evt.scan_item_found",
+    "EMIT_scan_complete=evt.scan_complete",
+    "EMIT_scan_item_failed=evt.scan_item_failed",
+  ],
+  restart: "unless-stopped",
+}, { dependsOn: [broker] });
+
+const updatePartitionManifest = new docker.Container("update_partition_manifest", {
+  image: "scan_and_upload/update_partition_manifest:latest",
+  networksAdvanced: [{ name: net.name }],
+  envs: [
+    "BROKER_URL=amqp://broker",
+    "INPUT_QUEUE=evt.scan_item_found",
+  ],
+  restart: "unless-stopped",
+}, { dependsOn: [broker] });
+
+// createImagePriorityManifestPolicy, filterManifestByPathType,
+// startManifestUploadPolicy, beginManifestUpload — same pattern
+
+export const brokerName = broker.name;
+// Pulumi outputs for referencing from other stacks</code></pre>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SLIDE 14 — Future
+    ══════════════════════════════════════════════════════════ -->
+    <div class="slide" data-slide="14">
+      <h2>Future — Closing the Loop</h2>
+      <div class="prose">
+        The pipeline today is a one-way transform from feat file to IaC.
+        The vision is a <strong>feedback loop</strong> where observational data and stored preferences
+        flow back into Stage 2 (location assignment), making deployment topology an
+        adaptive, data-driven decision.
+      </div>
+
+      <div class="timeline">
+        <div class="tl-item">
+          <div class="tl-when">Now</div>
+          <div class="tl-what">
+            <h4>Trivial location assignment</h4>
+            <p>One process per container. All channels resolve to <code>queue</code>. The pipeline is deterministic and manual — a human reviews the Resolved IR and approves IaC generation.</p>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-when">Near</div>
+          <div class="tl-what">
+            <h4>Preference store</h4>
+            <p>A structured YAML or database of deployment preferences per process (preferred host, scaling tier, co-location rules). Stage 2 reads from this store rather than applying a blanket "one container" rule.</p>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-when">Later</div>
+          <div class="tl-what">
+            <h4>Observational data → topology decisions</h4>
+            <p>Runtime metrics (throughput, latency, queue depth) feed back into Stage 2. A process pair with high-frequency synchronous messaging may be co-located automatically, converting their shared channel from <code>queue</code> to <code>direct</code>. A cost reduction with zero code change.</p>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-when">Vision</div>
+          <div class="tl-what">
+            <h4>The IR as the stable interface</h4>
+            <p>The feat file describes <em>what</em>. The Resolved IR describes <em>how</em> for a given moment in time. IaC renderers (docker-compose, pulumi, k8s) are pure functions of the IR. The process functions themselves <strong>never change</strong> — only the topology of how they're connected adapts.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose" style="border-top:1px solid var(--border);padding-top:16px;">
+        The Process Protocol is the same bet at every layer:
+        <strong>separate the logic from the transport</strong>.
+        At the function level: logic vs emit callbacks.
+        At the deployment level: feat file vs channel type resolution.
+        The IaC is just another transport.
+      </div>
+    </div>
+
+  </div><!-- /viewport -->
+</div><!-- /deck -->
+
+<script>
+  hljs.highlightAll();
+
+  const slides = document.querySelectorAll('.slide');
+  const total  = slides.length;
+  let current  = 0;
+
+  const counter  = document.getElementById('slide-counter');
+  const btnPrev  = document.getElementById('btn-prev');
+  const btnNext  = document.getElementById('btn-next');
+
+  function go(n) {
+    slides[current].classList.remove('active');
+    current = Math.max(0, Math.min(n, total - 1));
+    slides[current].classList.add('active');
+    counter.textContent = `${current + 1} / ${total}`;
+    btnPrev.disabled = current === 0;
+    btnNext.disabled = current === total - 1;
+    // reset scroll on the newly active slide
+    slides[current].scrollTop = 0;
+  }
+
+  btnPrev.addEventListener('click', () => go(current - 1));
+  btnNext.addEventListener('click', () => go(current + 1));
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') go(current + 1);
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   go(current - 1);
+  });
+
+  // Touch swipe
+  let touchStartX = 0;
+  document.getElementById('viewport').addEventListener('touchstart', e => {
+    touchStartX = e.touches[0].clientX;
+  }, { passive: true });
+  document.getElementById('viewport').addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 50) go(dx < 0 ? current + 1 : current - 1);
+  }, { passive: true });
+</script>
+</body>
+</html>
