@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>7M9 // PORTFOLIO</title>
+  <title>7M9 // TERMINAL v1.0</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
 
@@ -29,13 +29,15 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      overflow: hidden;
       font-family: 'Share Tech Mono', 'Courier New', monospace;
     }
 
+    /* ── CRT BEZEL ── */
     .bezel {
       position: relative;
       width: min(900px, 96vw);
-      min-height: min(675px, 72vw);
+      aspect-ratio: 4 / 3;
       background: radial-gradient(ellipse at center, #2a2a2a 0%, #111 60%, #0a0a0a 100%);
       border-radius: 24px / 18px;
       box-shadow:
@@ -48,6 +50,7 @@
       flex-direction: column;
     }
 
+    /* brand on bezel */
     .bezel-brand {
       text-align: center;
       color: #555;
@@ -58,6 +61,7 @@
       user-select: none;
     }
 
+    /* ── SCREEN ── */
     .screen {
       flex: 1;
       position: relative;
@@ -68,9 +72,9 @@
         inset 0 0 80px rgba(0, 255, 50, 0.04),
         inset 0 0 20px rgba(0,0,0,0.6),
         0 0 30px rgba(0, 255, 50, 0.15);
-      animation: flicker 0.15s infinite;
     }
 
+    /* phosphor glow layer */
     .screen::before {
       content: '';
       position: absolute;
@@ -83,6 +87,7 @@
       z-index: 3;
     }
 
+    /* scanlines */
     .screen::after {
       content: '';
       position: absolute;
@@ -98,6 +103,7 @@
       z-index: 4;
     }
 
+    /* vignette */
     .vignette {
       position: absolute;
       inset: 0;
@@ -108,6 +114,7 @@
       z-index: 5;
     }
 
+    /* RGB noise canvas */
     #noise {
       position: absolute;
       inset: 0;
@@ -118,26 +125,31 @@
       z-index: 2;
     }
 
+    /* ── TERMINAL CONTENT ── */
     .terminal {
       position: relative;
       z-index: 6;
-      padding: 24px 26px 48px;
+      padding: 20px 22px;
       height: 100%;
-      overflow-y: auto;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
-      gap: 0;
     }
 
     .line {
       color: var(--phosphor);
       font-size: clamp(0.55rem, 1.5vw, 0.82rem);
-      line-height: 1.6;
+      line-height: 1.55;
       text-shadow:
         0 0 6px var(--phosphor-glow),
         0 0 12px rgba(0, 255, 60, 0.25);
       white-space: pre;
+      min-height: 1.55em;
+      opacity: 0;
+      transition: opacity 0.05s;
     }
+
+    .line.visible { opacity: 1; }
 
     .line.dim {
       color: var(--phosphor-dim);
@@ -154,40 +166,9 @@
       text-shadow: 0 0 8px rgba(255,255,255,0.4);
     }
 
-    .line.gap { margin-top: 0.5em; }
+    .line.gap { margin-top: 0.4em; }
 
-    /* portfolio entry links */
-    .entry {
-      display: flex;
-      align-items: baseline;
-      gap: 0;
-      font-size: clamp(0.55rem, 1.5vw, 0.82rem);
-      line-height: 1.6;
-      margin: 0.15em 0;
-    }
-
-    .entry-prefix {
-      color: var(--phosphor-dim);
-      white-space: pre;
-    }
-
-    .entry-link {
-      color: var(--amber);
-      text-decoration: none;
-      text-shadow: 0 0 8px rgba(255, 176, 0, 0.5);
-      transition: color 0.1s, text-shadow 0.1s;
-    }
-
-    .entry-link:hover {
-      color: #fff;
-      text-shadow: 0 0 10px rgba(255, 255, 255, 0.7);
-    }
-
-    .entry-desc {
-      color: var(--phosphor-dim);
-      white-space: pre;
-    }
-
+    /* cursor */
     #cursor {
       display: inline-block;
       width: 0.55em;
@@ -203,6 +184,11 @@
       50%       { opacity: 0; }
     }
 
+    /* flicker animation */
+    .screen {
+      animation: flicker 0.15s infinite;
+    }
+
     @keyframes flicker {
       0%   { opacity: 1; }
       92%  { opacity: 1; }
@@ -212,6 +198,7 @@
       100% { opacity: 1; }
     }
 
+    /* power-on sweep */
     .power-sweep {
       position: absolute;
       inset: 0;
@@ -228,26 +215,30 @@
       100% { transform: translateY(110%); opacity: 0; }
     }
 
+    /* status bar */
     .statusbar {
       position: absolute;
       bottom: 6px;
-      left: 26px;
-      right: 26px;
+      left: 22px;
+      right: 22px;
       display: flex;
       justify-content: space-between;
       color: var(--phosphor-dim);
       font-size: clamp(0.42rem, 1vw, 0.6rem);
+      text-shadow: none;
       z-index: 7;
       user-select: none;
     }
 
+    #clock { color: var(--phosphor-dim); }
+
+    /* bezel bottom knobs */
     .knobs {
       display: flex;
       justify-content: center;
       gap: 18px;
       margin-top: 10px;
     }
-
     .knob {
       width: 16px;
       height: 16px;
@@ -268,48 +259,9 @@
     <div class="vignette"></div>
 
     <div class="terminal" id="terminal">
-      <div class="line dim">SYNTH-TEC BIOS v3.1  (C) 1984 SYNTH-TEC CORP.</div>
-      <div class="line dim">Loading directory index...  [OK]</div>
-      <div class="line gap"></div>
-      <div class="line amber">══════════════════════════════════════════════════════</div>
-      <div class="line bright">   7 M 9   //   P O R T F O L I O   I N D E X      </div>
-      <div class="line amber">══════════════════════════════════════════════════════</div>
-      <div class="line gap"></div>
-      <div class="line dim">  Available files on this node:</div>
-      <div class="line gap"></div>
-
-      <div class="entry">
-        <span class="entry-prefix">  [01]  </span>
-        <a class="entry-link" href="terminal.html">terminal.html</a>
-        <span class="entry-desc">         — 7M9 TERMINAL v1.0  (CRT boot screen)</span>
-      </div>
-
-      <div class="entry">
-        <span class="entry-prefix">  [02]  </span>
-        <a class="entry-link" href="chronicledb.html">chronicledb.html</a>
-        <span class="entry-desc">      — ChronicleDB  (Raft-consensus distributed event log, React)</span>
-      </div>
-
-      <div class="entry">
-        <span class="entry-prefix">  [03]  </span>
-        <a class="entry-link" href="chronicledb-vanilla.html">chronicledb-vanilla.html</a>
-        <span class="entry-desc"> — ChronicleDB  (vanilla JS build)</span>
-      </div>
-
-      <div class="entry">
-        <span class="entry-prefix">  [04]  </span>
-        <a class="entry-link" href="whiteboard.html">whiteboard.html</a>
-        <span class="entry-desc">       — scan_and_upload  (feature whiteboard)</span>
-      </div>
-
-      <div class="line gap"></div>
-      <div class="line dim">  ──────────────────────────────────────────────────────</div>
-      <div class="line dim">  Click any filename to open it.</div>
-      <div class="line gap"></div>
-      <div class="line">  C:\> <span id="cursor"></span></div>
-
+      <!-- lines injected by JS -->
       <div class="statusbar">
-        <span>DIR LISTING: 4 FILES</span>
+        <span id="mem">MEM: 640K&nbsp;&nbsp;OK</span>
         <span id="clock"></span>
         <span>BAUD: 9600</span>
       </div>
@@ -327,18 +279,18 @@
 (function () {
   'use strict';
 
-  /* noise canvas */
+  /* ── NOISE CANVAS ── */
   const canvas = document.getElementById('noise');
   const ctx    = canvas.getContext('2d');
 
-  function resizeNoise() {
+  function resizeNoise () {
     canvas.width  = canvas.offsetWidth;
     canvas.height = canvas.offsetHeight;
   }
   resizeNoise();
   window.addEventListener('resize', resizeNoise);
 
-  function drawNoise() {
+  function drawNoise () {
     const w = canvas.width, h = canvas.height;
     const img = ctx.createImageData(w, h);
     const d   = img.data;
@@ -352,9 +304,9 @@
   }
   drawNoise();
 
-  /* clock */
+  /* ── CLOCK ── */
   const clockEl = document.getElementById('clock');
-  function updateClock() {
+  function updateClock () {
     const n = new Date();
     const p = v => String(v).padStart(2, '0');
     clockEl.textContent = `${p(n.getHours())}:${p(n.getMinutes())}:${p(n.getSeconds())}`;
@@ -362,13 +314,116 @@
   updateClock();
   setInterval(updateClock, 1000);
 
-  /* glitch */
-  const screen = document.getElementById('screen');
-  function scheduleGlitch() {
-    const wait = 4000 + Math.random() * 8000;
-    setTimeout(() => { glitch(); scheduleGlitch(); }, wait);
+  /* ── SCRIPT LINES ── */
+  const ASCII_LOGO = [
+    '  ██████╗ ███╗   ███╗ █████╗ ',
+    ' ██╔════╝ ████╗ ████║██╔══██╗',
+    ' ███████╗ ██╔████╔██║╚██████║',
+    ' ╚════██║ ██║╚██╔╝██║ ╚═══██║',
+    ' ███████║ ██║ ╚═╝ ██║ █████╔╝',
+    ' ╚══════╝ ╚═╝     ╚═╝ ╚════╝ ',
+  ];
+
+  // Each entry: [text, className, delayAfter(ms)]
+  const SCRIPT = [
+    ['SYNTH-TEC BIOS v3.1  (C) 1984 SYNTH-TEC CORP.',                 'dim',    60],
+    ['Copyright (C) 1984–1987  All rights reserved.',                  'dim',    60],
+    ['',                                                                '',       40],
+    ['Memory test: 0K ... 256K ... 512K ... 640K  [OK]',               'dim',   120],
+    ['Checking drive A: ........  [OK]',                                'dim',    80],
+    ['Loading OS kernel  ................  [OK]',                       'dim',    80],
+    ['',                                                                '',       30],
+    ['SynthDOS 2.4  Kernel loaded.',                                    '',       60],
+    ['',                                                                '',       80],
+    // ASCII art — amber
+    ...ASCII_LOGO.map((l, i) => [l, 'amber', i === ASCII_LOGO.length - 1 ? 80 : 30]),
+    ['',                                                                '',       60],
+    ['══════════════════════════════════════════════════════',          'dim',    40],
+    ['   W E L C O M E   T O   T H E   G R I D ',                     'bright', 80],
+    ['══════════════════════════════════════════════════════',          'dim',    60],
+    ['',                                                                '',       40],
+    ['  > System:   7M9 Terminal Node v1.0',                           '',       55],
+    ['  > Uptime:   0d 00:00:01',                                       '',       55],
+    ['  > Status:   ALL SYSTEMS NOMINAL',                               '',       55],
+    ['  > Network:  SYNTHNET backbone — CONNECTED',                     '',       55],
+    ['',                                                                '',       50],
+    ['  Initializing user session...',                                  'dim',    90],
+    ['  Loading personality matrix...    ██████████  100%', 'dim',    90],
+    ['',                                                                '',       50],
+    ['  ACCESS GRANTED.',                                               'amber', 100],
+    ['',                                                                '',       50],
+    ['  Hello, OPERATOR.  The system is yours.',                        '',       70],
+    ['  Type HELP for command reference.',                              '',       70],
+    ['',                                                                '',       60],
+    ['C:\\>',                                                            '',         0],
+  ];
+
+  /* ── TYPE WRITER ── */
+  const terminal = document.getElementById('terminal');
+  const statusbar = terminal.querySelector('.statusbar');
+
+  // cursor element (injected after last line)
+  const cursorEl = document.createElement('span');
+  cursorEl.id = 'cursor';
+
+  let lineIndex = 0;
+  let charIndex = 0;
+  let currentLineEl = null;
+  let currentText = '';
+
+  function nextLine () {
+    if (lineIndex >= SCRIPT.length) {
+      // done — attach cursor
+      if (currentLineEl) currentLineEl.appendChild(cursorEl);
+      return;
+    }
+
+    const [text, cls, delay] = SCRIPT[lineIndex++];
+
+    currentLineEl = document.createElement('div');
+    currentLineEl.className = 'line' + (cls ? ' ' + cls : '');
+    // insert before statusbar
+    terminal.insertBefore(currentLineEl, statusbar);
+
+    currentText = text;
+    charIndex   = 0;
+
+    typeChar(delay);
   }
-  function glitch() {
+
+  function typeChar (delayAfter) {
+    if (charIndex <= currentText.length) {
+      currentLineEl.textContent = currentText.slice(0, charIndex);
+      currentLineEl.classList.add('visible');
+      charIndex++;
+      // vary speed: fast for regular chars, instant for spaces/empty lines
+      const speed = currentText.length === 0 ? 0 :
+                    currentText.trim() === ''  ? 5  :
+                    8 + Math.random() * 14;
+      setTimeout(() => typeChar(delayAfter), speed);
+    } else {
+      // line done
+      setTimeout(nextLine, delayAfter);
+      // auto-scroll
+      terminal.scrollTop = terminal.scrollHeight;
+    }
+  }
+
+  // start after power-sweep (1.2s)
+  setTimeout(nextLine, 1300);
+
+  /* ── RANDOM GLITCH ── */
+  const screen = document.getElementById('screen');
+
+  function scheduleGlitch () {
+    const wait = 4000 + Math.random() * 8000;
+    setTimeout(() => {
+      glitch();
+      scheduleGlitch();
+    }, wait);
+  }
+
+  function glitch () {
     const duration = 80 + Math.random() * 120;
     screen.style.transform = `skewX(${(Math.random() - 0.5) * 0.6}deg)`;
     screen.style.filter    = `brightness(1.3) hue-rotate(${Math.random() * 20}deg)`;
@@ -377,6 +432,7 @@
       screen.style.filter    = '';
     }, duration);
   }
+
   scheduleGlitch();
 })();
 </script>
