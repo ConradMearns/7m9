@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meal Planner</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #fafafa;
+      color: #111;
+      min-height: 100vh;
+      padding: 32px 24px 80px;
+      max-width: 1200px;
+      margin: 0 auto;
+      font-size: 14px;
+    }
+
+    h1 { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; }
+    h2 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; letter-spacing: -0.01em; }
+
+    header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .subtitle { font-size: 0.85rem; color: #888; margin-bottom: 32px; }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    button, .btn {
+      font: inherit;
+      background: #fff;
+      color: #111;
+      border: 1px solid #ddd;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 80ms, border-color 80ms;
+    }
+    button:hover, .btn:hover { background: #f3f3f3; }
+    button.primary { background: #111; color: #fff; border-color: #111; }
+    button.primary:hover { background: #333; }
+    button.ghost { background: transparent; border-color: transparent; color: #888; padding: 4px 8px; }
+    button.ghost:hover { color: #111; background: #f0f0f0; }
+    button.danger { color: #c33; }
+    button.danger:hover { background: #fdf0f0; }
+
+    input, select, textarea {
+      font: inherit;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 6px 8px;
+      background: #fff;
+      color: #111;
+      width: 100%;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #111; }
+    input[type="number"] { width: 70px; }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid #eee;
+    }
+    .tab {
+      padding: 8px 14px;
+      cursor: pointer;
+      color: #888;
+      font-weight: 500;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .tab.active { color: #111; border-bottom-color: #111; }
+    .tab:hover { color: #111; }
+
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    /* CALENDAR */
+    .cal-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      gap: 12px;
+    }
+    .cal-range { font-weight: 500; }
+
+    .calendar {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 8px;
+    }
+    @media (max-width: 800px) {
+      .calendar { grid-template-columns: 1fr; }
+    }
+
+    .day {
+      background: #fff;
+      border: 1px solid #eee;
+      border-radius: 8px;
+      padding: 10px;
+      min-height: 180px;
+      display: flex;
+      flex-direction: column;
+    }
+    .day-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+    .day-name { font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+    .day-date { font-weight: 600; }
+    .day.today .day-date { color: #c33; }
+
+    .slot {
+      margin-bottom: 6px;
+    }
+    .slot-label {
+      font-size: 0.65rem;
+      color: #aaa;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 2px;
+    }
+    .meal-card {
+      background: #f6f6f6;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 0.8rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 2px;
+    }
+    .meal-card .meal-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .meal-card .meal-servings {
+      font-size: 0.7rem;
+      color: #888;
+    }
+    .meal-card button.x {
+      font-size: 0.7rem;
+      padding: 0 4px;
+      border: none;
+      background: transparent;
+      color: #aaa;
+      cursor: pointer;
+    }
+    .meal-card button.x:hover { color: #c33; }
+    .add-slot {
+      display: flex;
+      gap: 4px;
+      margin-top: 2px;
+    }
+    .add-slot select {
+      flex: 1;
+      font-size: 0.75rem;
+      padding: 2px 4px;
+    }
+    .add-slot input[type="number"] {
+      width: 50px;
+      font-size: 0.75rem;
+      padding: 2px 4px;
+    }
+
+    /* RECIPES */
+    .recipes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+    }
+    .recipe-card {
+      background: #fff;
+      border: 1px solid #eee;
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .recipe-card h3 {
+      font-size: 1rem;
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .recipe-meta { font-size: 0.75rem; color: #888; margin-bottom: 8px; }
+    .recipe-ings { font-size: 0.8rem; color: #555; }
+    .recipe-ings li {
+      list-style: none;
+      padding: 2px 0;
+      border-top: 1px solid #f4f4f4;
+    }
+    .recipe-actions {
+      margin-top: 10px;
+      display: flex;
+      gap: 6px;
+    }
+
+    /* MODAL */
+    .modal-bg {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 20px;
+    }
+    .modal-bg.show { display: flex; }
+    .modal {
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 540px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal h2 { margin-bottom: 16px; }
+    .form-row {
+      margin-bottom: 12px;
+    }
+    .form-row label {
+      display: block;
+      font-size: 0.8rem;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .ing-row {
+      display: grid;
+      grid-template-columns: 1fr 80px 90px 30px;
+      gap: 6px;
+      margin-bottom: 6px;
+      align-items: center;
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    /* GROCERY */
+    .grocery-controls {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      align-items: end;
+    }
+    .grocery-controls .form-row { margin: 0; }
+    .grocery-list {
+      background: #fff;
+      border: 1px solid #eee;
+      border-radius: 8px;
+      padding: 4px 0;
+    }
+    .grocery-list li {
+      list-style: none;
+      padding: 10px 16px;
+      border-top: 1px solid #f4f4f4;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .grocery-list li:first-child { border-top: none; }
+    .grocery-list .ing-name { font-weight: 500; }
+    .grocery-list .ing-amount { color: #555; font-variant-numeric: tabular-nums; }
+    .grocery-list .ing-sources { font-size: 0.75rem; color: #999; }
+    .grocery-list .checkbox {
+      width: auto;
+      cursor: pointer;
+    }
+    .grocery-list li.checked .ing-name,
+    .grocery-list li.checked .ing-amount { text-decoration: line-through; color: #aaa; }
+
+    .empty {
+      padding: 32px;
+      text-align: center;
+      color: #999;
+      font-size: 0.9rem;
+    }
+
+    .back { font-size: 0.8rem; color: #888; text-decoration: none; }
+    .back:hover { color: #111; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <a href="index.html" class="back">← back</a>
+      <h1 style="margin-top:4px">Meal Planner</h1>
+    </div>
+    <div class="toolbar">
+      <button id="btn-import">Import JSON</button>
+      <button id="btn-export">Export JSON</button>
+      <button id="btn-reset" class="ghost">Reset</button>
+    </div>
+  </header>
+  <p class="subtitle">Plan meals, scale servings, generate a grocery list.</p>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="calendar">Calendar</div>
+    <div class="tab" data-tab="recipes">Recipes</div>
+    <div class="tab" data-tab="grocery">Grocery</div>
+  </div>
+
+  <!-- CALENDAR -->
+  <div class="panel active" data-panel="calendar">
+    <div class="cal-nav">
+      <div style="display:flex;gap:6px">
+        <button id="cal-prev">←</button>
+        <button id="cal-today">Today</button>
+        <button id="cal-next">→</button>
+      </div>
+      <div class="cal-range" id="cal-range"></div>
+      <div style="width:120px"></div>
+    </div>
+    <div class="calendar" id="calendar"></div>
+  </div>
+
+  <!-- RECIPES -->
+  <div class="panel" data-panel="recipes">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0">Recipes</h2>
+      <button class="primary" id="btn-new-recipe">+ New Recipe</button>
+    </div>
+    <div class="recipes-grid" id="recipes-grid"></div>
+  </div>
+
+  <!-- GROCERY -->
+  <div class="panel" data-panel="grocery">
+    <h2>Grocery List</h2>
+    <div class="grocery-controls">
+      <div class="form-row">
+        <label>From</label>
+        <input type="date" id="grocery-from" />
+      </div>
+      <div class="form-row">
+        <label>To</label>
+        <input type="date" id="grocery-to" />
+      </div>
+      <button id="btn-grocery-week">This week</button>
+      <button id="btn-grocery-refresh" class="primary">Refresh</button>
+      <button id="btn-grocery-copy" class="ghost">Copy as text</button>
+    </div>
+    <ul class="grocery-list" id="grocery-list"></ul>
+  </div>
+
+  <!-- RECIPE MODAL -->
+  <div class="modal-bg" id="recipe-modal">
+    <div class="modal">
+      <h2 id="recipe-modal-title">New Recipe</h2>
+      <div class="form-row">
+        <label>Name</label>
+        <input id="r-name" type="text" placeholder="e.g. Lentil Soup" />
+      </div>
+      <div class="form-row">
+        <label>Base servings (default amount this recipe makes)</label>
+        <input id="r-servings" type="number" min="1" step="1" value="4" />
+      </div>
+      <div class="form-row">
+        <label>Ingredients</label>
+        <div id="r-ings"></div>
+        <button id="r-add-ing" class="ghost" style="margin-top:4px">+ add ingredient</button>
+      </div>
+      <div class="form-row">
+        <label>Notes (optional)</label>
+        <textarea id="r-notes" rows="2"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button id="r-cancel">Cancel</button>
+        <button id="r-save" class="primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="import-file" accept=".json,application/json" style="display:none" />
+
+<script>
+'use strict';
+
+// ---------- STATE ----------
+const STORAGE_KEY = 'meal-planner-v1';
+
+const DEFAULT_STATE = {
+  recipes: [
+    {
+      id: 'r-pasta',
+      name: 'Tomato Pasta',
+      servings: 4,
+      ingredients: [
+        { name: 'pasta', amount: 400, unit: 'g' },
+        { name: 'tomato sauce', amount: 500, unit: 'ml' },
+        { name: 'garlic', amount: 3, unit: 'cloves' },
+        { name: 'olive oil', amount: 2, unit: 'tbsp' },
+        { name: 'parmesan', amount: 50, unit: 'g' }
+      ],
+      notes: ''
+    },
+    {
+      id: 'r-oats',
+      name: 'Oatmeal',
+      servings: 1,
+      ingredients: [
+        { name: 'rolled oats', amount: 50, unit: 'g' },
+        { name: 'milk', amount: 200, unit: 'ml' },
+        { name: 'banana', amount: 1, unit: '' },
+        { name: 'honey', amount: 1, unit: 'tbsp' }
+      ],
+      notes: ''
+    },
+    {
+      id: 'r-salad',
+      name: 'Chicken Salad',
+      servings: 2,
+      ingredients: [
+        { name: 'chicken breast', amount: 300, unit: 'g' },
+        { name: 'mixed greens', amount: 200, unit: 'g' },
+        { name: 'cherry tomato', amount: 150, unit: 'g' },
+        { name: 'olive oil', amount: 2, unit: 'tbsp' },
+        { name: 'lemon', amount: 1, unit: '' }
+      ],
+      notes: ''
+    }
+  ],
+  // calendar: { 'YYYY-MM-DD': { breakfast: [{recipeId, servings}], lunch: [...], dinner: [...] } }
+  calendar: {}
+};
+
+const SLOTS = ['breakfast', 'lunch', 'dinner'];
+
+let state = load();
+let viewWeekStart = startOfWeek(new Date());
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return structuredClone(DEFAULT_STATE);
+    const parsed = JSON.parse(raw);
+    if (!parsed.recipes || !parsed.calendar) return structuredClone(DEFAULT_STATE);
+    return parsed;
+  } catch (e) {
+    return structuredClone(DEFAULT_STATE);
+  }
+}
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+// ---------- DATE HELPERS ----------
+function startOfWeek(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  const day = x.getDay(); // 0=Sun..6=Sat — start week on Monday
+  const diff = (day === 0 ? -6 : 1 - day);
+  x.setDate(x.getDate() + diff);
+  return x;
+}
+function addDays(d, n) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+function ymd(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+function prettyDate(d) {
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// ---------- TABS ----------
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    const panel = document.querySelector(`.panel[data-panel="${t.dataset.tab}"]`);
+    panel.classList.add('active');
+    if (t.dataset.tab === 'grocery') refreshGrocery();
+    if (t.dataset.tab === 'recipes') renderRecipes();
+  });
+});
+
+// ---------- CALENDAR RENDER ----------
+function renderCalendar() {
+  const cal = document.getElementById('calendar');
+  cal.innerHTML = '';
+  const todayStr = ymd(new Date());
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(viewWeekStart, i);
+    const key = ymd(d);
+    const day = document.createElement('div');
+    day.className = 'day' + (key === todayStr ? ' today' : '');
+
+    const header = document.createElement('div');
+    header.className = 'day-header';
+    header.innerHTML = `
+      <span class="day-name">${d.toLocaleDateString(undefined, { weekday: 'short' })}</span>
+      <span class="day-date">${d.getDate()}</span>
+    `;
+    day.appendChild(header);
+
+    const dayMeals = state.calendar[key] || {};
+
+    for (const slot of SLOTS) {
+      const slotDiv = document.createElement('div');
+      slotDiv.className = 'slot';
+      slotDiv.innerHTML = `<div class="slot-label">${slot}</div>`;
+
+      const meals = dayMeals[slot] || [];
+      for (let mi = 0; mi < meals.length; mi++) {
+        const m = meals[mi];
+        const recipe = state.recipes.find(r => r.id === m.recipeId);
+        const card = document.createElement('div');
+        card.className = 'meal-card';
+        card.innerHTML = `
+          <span class="meal-name" title="${recipe ? recipe.name : '?'}">${recipe ? recipe.name : '[deleted]'}</span>
+          <span class="meal-servings">×${m.servings}</span>
+          <button class="x" title="remove">✕</button>
+        `;
+        card.querySelector('button.x').addEventListener('click', () => {
+          meals.splice(mi, 1);
+          if (meals.length === 0) delete dayMeals[slot];
+          if (Object.keys(dayMeals).length === 0) delete state.calendar[key];
+          else state.calendar[key] = dayMeals;
+          save();
+          renderCalendar();
+        });
+        slotDiv.appendChild(card);
+      }
+
+      // add control
+      const addRow = document.createElement('div');
+      addRow.className = 'add-slot';
+      const sel = document.createElement('select');
+      sel.innerHTML = `<option value="">+ add</option>` +
+        state.recipes.map(r => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join('');
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.min = 1;
+      inp.step = 1;
+      inp.value = 1;
+      inp.title = 'servings';
+      sel.addEventListener('change', () => {
+        if (!sel.value) return;
+        const servings = Math.max(1, parseInt(inp.value, 10) || 1);
+        if (!state.calendar[key]) state.calendar[key] = {};
+        if (!state.calendar[key][slot]) state.calendar[key][slot] = [];
+        state.calendar[key][slot].push({ recipeId: sel.value, servings });
+        save();
+        renderCalendar();
+      });
+      addRow.appendChild(sel);
+      addRow.appendChild(inp);
+      slotDiv.appendChild(addRow);
+
+      day.appendChild(slotDiv);
+    }
+
+    cal.appendChild(day);
+  }
+
+  const end = addDays(viewWeekStart, 6);
+  document.getElementById('cal-range').textContent =
+    `${prettyDate(viewWeekStart)} — ${prettyDate(end)}, ${end.getFullYear()}`;
+}
+
+document.getElementById('cal-prev').addEventListener('click', () => {
+  viewWeekStart = addDays(viewWeekStart, -7);
+  renderCalendar();
+});
+document.getElementById('cal-next').addEventListener('click', () => {
+  viewWeekStart = addDays(viewWeekStart, 7);
+  renderCalendar();
+});
+document.getElementById('cal-today').addEventListener('click', () => {
+  viewWeekStart = startOfWeek(new Date());
+  renderCalendar();
+});
+
+// ---------- RECIPES ----------
+function renderRecipes() {
+  const grid = document.getElementById('recipes-grid');
+  grid.innerHTML = '';
+  if (state.recipes.length === 0) {
+    grid.innerHTML = `<div class="empty">No recipes yet. Add one to get started.</div>`;
+    return;
+  }
+  for (const r of state.recipes) {
+    const card = document.createElement('div');
+    card.className = 'recipe-card';
+    card.innerHTML = `
+      <h3><span>${escapeHtml(r.name)}</span></h3>
+      <div class="recipe-meta">Makes ${r.servings} serving${r.servings === 1 ? '' : 's'}</div>
+      <ul class="recipe-ings">
+        ${r.ingredients.map(i => `<li>${escapeHtml(i.name)} — ${i.amount}${i.unit ? ' ' + escapeHtml(i.unit) : ''}</li>`).join('')}
+      </ul>
+      <div class="recipe-actions">
+        <button data-edit="${r.id}">Edit</button>
+        <button data-del="${r.id}" class="danger">Delete</button>
+      </div>
+    `;
+    card.querySelector('[data-edit]').addEventListener('click', () => openRecipeModal(r.id));
+    card.querySelector('[data-del]').addEventListener('click', () => {
+      if (!confirm(`Delete "${r.name}"? Scheduled instances will show as [deleted].`)) return;
+      state.recipes = state.recipes.filter(x => x.id !== r.id);
+      save();
+      renderRecipes();
+      renderCalendar();
+    });
+    grid.appendChild(card);
+  }
+}
+
+// ---------- RECIPE MODAL ----------
+let editingRecipeId = null;
+const modal = document.getElementById('recipe-modal');
+
+function openRecipeModal(id) {
+  editingRecipeId = id || null;
+  const r = id ? state.recipes.find(x => x.id === id) : null;
+  document.getElementById('recipe-modal-title').textContent = r ? 'Edit Recipe' : 'New Recipe';
+  document.getElementById('r-name').value = r ? r.name : '';
+  document.getElementById('r-servings').value = r ? r.servings : 4;
+  document.getElementById('r-notes').value = r ? (r.notes || '') : '';
+  const ingsDiv = document.getElementById('r-ings');
+  ingsDiv.innerHTML = '';
+  const ings = r ? r.ingredients : [{ name: '', amount: 1, unit: '' }];
+  ings.forEach(i => addIngredientRow(i));
+  modal.classList.add('show');
+}
+function closeRecipeModal() {
+  modal.classList.remove('show');
+  editingRecipeId = null;
+}
+function addIngredientRow(ing) {
+  const row = document.createElement('div');
+  row.className = 'ing-row';
+  row.innerHTML = `
+    <input class="ing-name" type="text" placeholder="name" value="${ing ? escapeAttr(ing.name) : ''}" />
+    <input class="ing-amount" type="number" step="any" min="0" placeholder="amount" value="${ing ? ing.amount : ''}" />
+    <input class="ing-unit" type="text" placeholder="unit" value="${ing ? escapeAttr(ing.unit) : ''}" />
+    <button class="ghost ing-del" title="remove">✕</button>
+  `;
+  row.querySelector('.ing-del').addEventListener('click', () => row.remove());
+  document.getElementById('r-ings').appendChild(row);
+}
+
+document.getElementById('btn-new-recipe').addEventListener('click', () => openRecipeModal(null));
+document.getElementById('r-cancel').addEventListener('click', closeRecipeModal);
+modal.addEventListener('click', (e) => { if (e.target === modal) closeRecipeModal(); });
+document.getElementById('r-add-ing').addEventListener('click', () => addIngredientRow());
+
+document.getElementById('r-save').addEventListener('click', () => {
+  const name = document.getElementById('r-name').value.trim();
+  const servings = Math.max(1, parseInt(document.getElementById('r-servings').value, 10) || 1);
+  const notes = document.getElementById('r-notes').value.trim();
+  if (!name) { alert('Please enter a recipe name.'); return; }
+
+  const ings = [...document.querySelectorAll('#r-ings .ing-row')].map(row => ({
+    name: row.querySelector('.ing-name').value.trim(),
+    amount: parseFloat(row.querySelector('.ing-amount').value) || 0,
+    unit: row.querySelector('.ing-unit').value.trim()
+  })).filter(i => i.name);
+
+  if (ings.length === 0) { alert('Add at least one ingredient.'); return; }
+
+  if (editingRecipeId) {
+    const r = state.recipes.find(x => x.id === editingRecipeId);
+    Object.assign(r, { name, servings, ingredients: ings, notes });
+  } else {
+    state.recipes.push({
+      id: 'r-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name, servings, ingredients: ings, notes
+    });
+  }
+  save();
+  closeRecipeModal();
+  renderRecipes();
+  renderCalendar();
+});
+
+// ---------- GROCERY ----------
+const checkedItems = new Set();
+
+function refreshGrocery() {
+  const from = document.getElementById('grocery-from').value;
+  const to = document.getElementById('grocery-to').value;
+  const list = document.getElementById('grocery-list');
+  list.innerHTML = '';
+
+  if (!from || !to) {
+    list.innerHTML = `<div class="empty">Pick a date range.</div>`;
+    return;
+  }
+  if (from > to) {
+    list.innerHTML = `<div class="empty">"From" date must be on or before "To".</div>`;
+    return;
+  }
+
+  // aggregate: { name+unit: { name, unit, amount, sources: Set } }
+  const agg = {};
+  for (const dateKey of Object.keys(state.calendar)) {
+    if (dateKey < from || dateKey > to) continue;
+    const day = state.calendar[dateKey];
+    for (const slot of SLOTS) {
+      for (const m of (day[slot] || [])) {
+        const recipe = state.recipes.find(r => r.id === m.recipeId);
+        if (!recipe) continue;
+        const scale = m.servings / recipe.servings;
+        for (const ing of recipe.ingredients) {
+          const key = ing.name.toLowerCase().trim() + '|' + ing.unit.toLowerCase().trim();
+          if (!agg[key]) {
+            agg[key] = { name: ing.name, unit: ing.unit, amount: 0, sources: new Set() };
+          }
+          agg[key].amount += ing.amount * scale;
+          agg[key].sources.add(recipe.name);
+        }
+      }
+    }
+  }
+
+  const items = Object.values(agg).sort((a, b) => a.name.localeCompare(b.name));
+  if (items.length === 0) {
+    list.innerHTML = `<div class="empty">No meals scheduled in this range.</div>`;
+    return;
+  }
+
+  for (const item of items) {
+    const li = document.createElement('li');
+    const key = item.name + '|' + item.unit;
+    if (checkedItems.has(key)) li.classList.add('checked');
+    const amountStr = formatAmount(item.amount) + (item.unit ? ' ' + item.unit : '');
+    li.innerHTML = `
+      <input type="checkbox" class="checkbox" ${checkedItems.has(key) ? 'checked' : ''} />
+      <div style="flex:1">
+        <div><span class="ing-name">${escapeHtml(item.name)}</span> <span class="ing-amount">${amountStr}</span></div>
+        <div class="ing-sources">${[...item.sources].map(escapeHtml).join(', ')}</div>
+      </div>
+    `;
+    const cb = li.querySelector('.checkbox');
+    cb.addEventListener('change', () => {
+      if (cb.checked) { checkedItems.add(key); li.classList.add('checked'); }
+      else { checkedItems.delete(key); li.classList.remove('checked'); }
+    });
+    list.appendChild(li);
+  }
+}
+
+function formatAmount(n) {
+  if (Number.isInteger(n)) return String(n);
+  return (Math.round(n * 100) / 100).toString();
+}
+
+document.getElementById('btn-grocery-refresh').addEventListener('click', refreshGrocery);
+document.getElementById('btn-grocery-week').addEventListener('click', () => {
+  const start = startOfWeek(new Date());
+  const end = addDays(start, 6);
+  document.getElementById('grocery-from').value = ymd(start);
+  document.getElementById('grocery-to').value = ymd(end);
+  refreshGrocery();
+});
+document.getElementById('grocery-from').addEventListener('change', refreshGrocery);
+document.getElementById('grocery-to').addEventListener('change', refreshGrocery);
+document.getElementById('btn-grocery-copy').addEventListener('click', () => {
+  const lines = [...document.querySelectorAll('#grocery-list li')].map(li => {
+    const name = li.querySelector('.ing-name')?.textContent || '';
+    const amt = li.querySelector('.ing-amount')?.textContent || '';
+    return `- ${name} — ${amt}`;
+  });
+  if (lines.length === 0) { alert('Nothing to copy.'); return; }
+  navigator.clipboard.writeText(lines.join('\n')).then(
+    () => alert('Copied to clipboard.'),
+    () => alert('Copy failed.')
+  );
+});
+
+// ---------- IMPORT / EXPORT ----------
+document.getElementById('btn-export').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `meal-plan-${ymd(new Date())}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('btn-import').addEventListener('click', () => {
+  document.getElementById('import-file').click();
+});
+document.getElementById('import-file').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(reader.result);
+      if (!parsed || !Array.isArray(parsed.recipes) || typeof parsed.calendar !== 'object') {
+        throw new Error('Invalid file format');
+      }
+      if (!confirm('Replace current data with imported file?')) return;
+      state = parsed;
+      save();
+      renderRecipes();
+      renderCalendar();
+      refreshGrocery();
+      alert('Imported successfully.');
+    } catch (err) {
+      alert('Import failed: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  if (!confirm('Reset to default sample data? This will erase your current plan.')) return;
+  state = structuredClone(DEFAULT_STATE);
+  save();
+  renderRecipes();
+  renderCalendar();
+  refreshGrocery();
+});
+
+// ---------- UTIL ----------
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
+// ---------- INIT ----------
+(function init() {
+  const today = new Date();
+  const start = startOfWeek(today);
+  document.getElementById('grocery-from').value = ymd(start);
+  document.getElementById('grocery-to').value = ymd(addDays(start, 6));
+  renderCalendar();
+  renderRecipes();
+})();
+</script>
+</body>
+</html>
