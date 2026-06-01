@@ -28,14 +28,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build ecs-lisp (TypeScript -> static bundle)
+        working-directory: ecs-lisp
+        run: bun build ./index.html --outdir dist --minify
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          # All root static pages, minus build/source dirs.
+          rsync -a --exclude='.git' --exclude='_site' \
+                --exclude='node_modules' --exclude='ecs-lisp' ./ _site/
+          # Serve the BUILT ecs-lisp page (not its TypeScript source) at /ecs-lisp/.
+          mkdir -p _site/ecs-lisp
+          cp -r ecs-lisp/dist/. _site/ecs-lisp/
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload the whole repo root (index.html lives here)
-          path: '.'
+          path: '_site'
 
       - name: Deploy to GitHub Pages
         id: deployment
