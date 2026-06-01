@@ -1,0 +1,32 @@
+# ecs-lisp tasks. Run `just` to list, `just build` for the static page.
+
+# show available recipes
+default:
+    @just --list
+
+# install dependencies
+install:
+    bun install
+
+# dev server with hot reload (http://localhost:3000)
+dev:
+    bun ./index.html
+
+# bundle to a static page in dist/ (open dist/index.html directly)
+build: clean
+    bun build ./index.html --outdir dist --minify
+
+# run the unit tests
+test:
+    bun test
+
+# strict type-check (no emit)
+typecheck:
+    bun x tsc --noEmit
+
+# everything CI would run
+check: typecheck test build
+
+# remove build output
+clean:
+    rm -rf dist

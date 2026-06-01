@@ -115,9 +115,10 @@ const stringP = map(
   (t): SExpr => ({ kind: "string", value: JSON.parse(t) as string }),
 );
 
-// A symbol is anything that is not whitespace, a paren, or a quote.
+// A symbol is anything that is not whitespace, a paren/quote, or a reader
+// macro character (' ` ,) — those are handled as sugar below.
 const symbolP = map(
-  lexeme(regex(/[^\s()"]+/, "symbol")),
+  lexeme(regex(/[^\s()"'`,]+/, "symbol")),
   (t): SExpr => ({ kind: "symbol", name: t }),
 );
 
@@ -133,8 +134,48 @@ const listP: Parser<SExpr> = (s) => {
   return succeed({ kind: "list", items: inner.value }, close.next);
 };
 
-// Order matters: numbers before symbols (a symbol would also swallow digits).
-const expr: Parser<SExpr> = lazy(() => alt(numberP, stringP, listP, symbolP));
+// Reader sugar: 'x → (quote x), `x → (quasiquote x), ,x → (unquote x).
+const sugar =
+  (prefix: RegExp, label: string, head: string): Parser<SExpr> =>
+  (s) => {
+    const p = lexeme(regex(prefix, label))(s);
+    if (!p.ok) return p;
+    const inner = expr(p.next);
+    if (!inner.ok) return inner;
+    return succeed(
+      { kind: "list", items: [{ kind: "symbol", name: head }, inner.value] },
+      inner.next,
+    );
+  };
+
+const quoteP = sugar(/'/, "'", "quote");
+const quasiquoteP = sugar(/`/, "`", "quasiquote");
+const unquoteP = sugar(/,/, ",", "unquote");
+
+// Order matters: sugar first, then numbers before symbols (a symbol would
+// otherwise swallow digits).
+const expr: Parser<SExpr> = lazy(() =>
+  alt(quoteP, quasiquoteP, unquoteP, numberP, stringP, listP, symbolP),
+);
+
+const SUGAR: Record<string, string> = {
+  quote: "'",
+  quasiquote: "`",
+  unquote: ",",
+};
+
+const SEXPR_KINDS = new Set(["number", "string", "symbol", "list"]);
+
+/** Runtime type guard: is this value an s-expression node (code-as-data)? */
+export function isSExpr(v: unknown): v is SExpr {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    "kind" in v &&
+    typeof (v as { kind: unknown }).kind === "string" &&
+    SEXPR_KINDS.has((v as { kind: string }).kind)
+  );
+}
 
 /**
  * Parse a whole program: zero or more top-level s-expressions.
@@ -160,7 +201,13 @@ export function unparse(e: SExpr): string {
       return JSON.stringify(e.value);
     case "symbol":
       return e.name;
-    case "list":
+    case "list": {
+      // Render (quote x) as 'x, (quasiquote x) as `x, (unquote x) as ,x.
+      const head = e.items[0];
+      if (e.items.length === 2 && head.kind === "symbol" && SUGAR[head.name]) {
+        return SUGAR[head.name] + unparse(e.items[1]);
+      }
       return `(${e.items.map(unparse).join(" ")})`;
+    }
   }
 }

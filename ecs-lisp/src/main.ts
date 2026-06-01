@@ -4,7 +4,7 @@
 
 import { World, type EntityId } from "./ecs";
 import { Interpreter, type Value } from "./interpreter";
-import { unparse, parse } from "./parser";
+import { unparse, parse, isSExpr } from "./parser";
 import { DEFAULT_EXAMPLE, EXAMPLES, GLOSSARY, NOTES } from "./library";
 
 const $ = <T extends HTMLElement>(id: string): T => {
@@ -34,6 +34,32 @@ function nameOf(id: EntityId): string {
   return typeof n === "string" ? n : `#${id}`;
 }
 
+/** Where the real entity named `name` actually is, or null. */
+function truthLocation(name: string): string | null {
+  const id = world.query("Name").find((e) => world.get(e, "Name") === name);
+  if (id === undefined) return null;
+  const at = world.get(id, "At");
+  return typeof at === "number" ? nameOf(at) : null;
+}
+
+/** An agent's beliefs about where others are, flagging any that are stale. */
+function beliefsOf(agent: EntityId): string {
+  const beliefs = world.get(agent, "Beliefs");
+  if (!(beliefs instanceof World)) return "(nothing sensed yet)";
+  const self = nameOf(agent);
+  const parts: string[] = [];
+  for (const id of beliefs.query("Name", "At")) {
+    const subject = beliefs.get(id, "Name");
+    if (typeof subject !== "string" || subject === self) continue;
+    const at = beliefs.get(id, "At");
+    const believed = typeof at === "number" ? beliefs.get(at, "Name") : null;
+    if (typeof believed !== "string") continue;
+    const stale = truthLocation(subject) !== believed;
+    parts.push(`${subject}@${believed}${stale ? " ⚠" : ""}`);
+  }
+  return parts.length ? parts.join(", ") : "—";
+}
+
 /** Human-readable view: locations with their occupants, then loose entities. */
 function renderWorld(): void {
   const lines: string[] = [];
@@ -56,17 +82,40 @@ function renderWorld(): void {
     for (const h of homeless) lines.push(`    · ${h}`);
   }
 
-  const json = JSON.stringify(world.snapshot(), null, 2);
+  // Agents: location (truth), what they believe, and their in-progress thought.
+  const agents = world.query("Mind");
+  if (agents.length) {
+    lines.push("", "— agents —");
+    for (const a of agents.sort((x, y) => x - y)) {
+      const at = world.get(a, "At");
+      const loc = typeof at === "number" ? nameOf(at) : "nowhere";
+      const thought = world.get(a, "Thought");
+      const status = isSExpr(thought) ? `thinking ${unparse(thought)}` : "idle";
+      lines.push(`◆ ${nameOf(a)} @ ${loc}`);
+      lines.push(`    believes: ${beliefsOf(a)}`);
+      lines.push(`    ${status}`);
+    }
+  }
+
+  const json = JSON.stringify(world.snapshot(), jsonReplacer, 2);
   worldEl.textContent =
     (lines.length ? lines.join("\n") : "(empty world)") +
     "\n\n— raw components —\n" +
     json;
-  countEl.textContent = `${world.all().length} entities`;
+  countEl.textContent = `⏱ ${lisp.clock} · ${world.all().length} entities`;
+}
+
+// Render quoted code as its source, and a nested belief-world as its snapshot.
+function jsonReplacer(_key: string, val: unknown): unknown {
+  if (val instanceof World) return val.snapshot();
+  if (isSExpr(val)) return `'${unparse(val)}`;
+  return val;
 }
 
 function fmt(v: Value): string {
   if (v === null) return "null";
-  if (typeof v === "object") return JSON.stringify(v);
+  if (isSExpr(v)) return `'${unparse(v)}`;
+  if (typeof v === "object") return JSON.stringify(v, jsonReplacer);
   return String(v);
 }
 
@@ -144,6 +193,7 @@ function recall(dir: -1 | 1): void {
 }
 
 function reset(): void {
+  stopPlay();
   world = new World();
   lisp = new Interpreter(world);
   entered.length = 0;
@@ -194,6 +244,45 @@ $("run").addEventListener("click", () => {
   input.focus();
 });
 $("reset").addEventListener("click", reset);
+$("tick").addEventListener("click", () => {
+  try {
+    lisp.run("(tick)");
+    systemLine(`tick ${lisp.clock}`);
+    renderWorld();
+  } catch (e) {
+    addEntry("err", "(tick)", `✗ ${e instanceof Error ? e.message : String(e)}`);
+  }
+  input.focus();
+});
+
+// ── Play: auto-advance ticks until paused ───────────────────────────────────
+let playTimer: ReturnType<typeof setInterval> | null = null;
+const playBtn = $<HTMLButtonElement>("play");
+
+function stopPlay(): void {
+  if (playTimer !== null) clearInterval(playTimer);
+  playTimer = null;
+  playBtn.textContent = "▶ Play";
+}
+
+function togglePlay(): void {
+  if (playTimer !== null) {
+    stopPlay();
+    return;
+  }
+  playBtn.textContent = "⏸ Pause";
+  playTimer = setInterval(() => {
+    try {
+      lisp.run("(tick)");
+      renderWorld();
+    } catch (e) {
+      stopPlay();
+      addEntry("err", "(tick)", `✗ ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, 650);
+}
+
+playBtn.addEventListener("click", togglePlay);
 $("save").addEventListener("click", save);
 $("load").addEventListener("click", load);
 input.addEventListener("keydown", (e) => {
