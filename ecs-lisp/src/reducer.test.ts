@@ -49,4 +49,21 @@ describe("reducer", () => {
     // Wolf-at is an inert name here; (= Wolf-at Pasture) is false → Pasture branch
     expect(reduce(src)).toBe("(move Self Pasture)");
   });
+
+  test("list operations", () => {
+    expect(reduce("(first (list Pasture Barn Meadow))")).toBe("Pasture");
+    expect(reduce("(rest (list Pasture Barn))")).toBe("(Barn)");
+    expect(reduce("(count (list a b c))")).toBe("3");
+    expect(reduce("(empty? (list))")).toBe("true");
+    expect(reduce("(member? Barn (list Pasture Barn))")).toBe("true");
+    expect(reduce("(member? Cave (list Pasture Barn))")).toBe("false");
+    expect(reduce("(without (list Pasture Barn Meadow) Barn)")).toBe("(Pasture Meadow)");
+  });
+
+  test("pick the first safe location (the evasion idiom)", () => {
+    // safe = all locations except where the wolf is believed to be
+    const src =
+      "(move Self (first (without (list Pasture Barn Meadow) Pasture)))";
+    expect(reduce(src)).toBe("(move Self Barn)");
+  });
 });

@@ -57,6 +57,13 @@ function asNumber(e: SExpr): number {
 }
 
 const num = (value: number): SExpr => ({ kind: "number", value });
+const list = (items: SExpr[]): SExpr => ({ kind: "list", items });
+
+/** A list value is an inert (non-operator-headed) list. */
+function asList(e: SExpr, who: string): SExpr[] {
+  if (e.kind !== "list") throw new Error(`${who}: not a list: ${unparse(e)}`);
+  return e.items;
+}
 
 /** Strict pure functions: applied only once every argument is a value. */
 const PURE_FNS: Record<string, (args: SExpr[]) => SExpr> = {
@@ -70,6 +77,19 @@ const PURE_FNS: Record<string, (args: SExpr[]) => SExpr> = {
       : args.length === 1
         ? num(-asNumber(args[0]))
         : num(args.slice(1).reduce((s, a) => s - asNumber(a), asNumber(args[0]))),
+
+  // list operations (operate on inert list values)
+  list: (args) => list(args),
+  first: (args) => asList(args[0], "first")[0] ?? NIL,
+  rest: (args) => list(asList(args[0], "rest").slice(1)),
+  count: (args) => num(asList(args[0], "count").length),
+  "empty?": (args) => bool(asList(args[0], "empty?").length === 0),
+  // (member? x list) -> is x in the list?
+  "member?": (args) =>
+    bool(asList(args[1], "member?").some((it) => equalValues(it, args[0]))),
+  // (without list x) -> list with every element equal to x removed
+  without: (args) =>
+    list(asList(args[0], "without").filter((it) => !equalValues(it, args[1]))),
 };
 
 const LAZY = new Set(["if", "and", "or"]);

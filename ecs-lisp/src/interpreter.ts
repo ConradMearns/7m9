@@ -48,6 +48,7 @@ function valueToSExpr(v: Value): SExpr {
   if (typeof v === "string") return { kind: "string", value: v };
   if (typeof v === "boolean") return { kind: "symbol", name: v ? "true" : "false" };
   if (v === null) return { kind: "symbol", name: "nil" };
+  if (Array.isArray(v)) return { kind: "list", items: v.map(valueToSExpr) };
   throw new Error(`cannot splice ${JSON.stringify(v)} into a quasiquote`);
 }
 
@@ -279,6 +280,10 @@ export class Interpreter {
       // (recall Wolf Sheep) -> where Wolf *believes* Sheep is (may be stale).
       recall: (args) =>
         recall(w, this.require(this.asName(args[0])), this.asName(args[1])),
+
+      // (locations) -> names of every place. Bake into a thought with ,(locations).
+      locations: () =>
+        w.query(PLACE).map((id) => w.get(id, NAME)).filter((n): n is string => typeof n === "string"),
 
       // (mind Sheep '(if (= ,(recall Self Wolf) Pasture) (move Self Barn) ...))
       // Store a behavior template. `Self` binds to the entity; `,perception`

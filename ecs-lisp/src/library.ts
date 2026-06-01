@@ -30,6 +30,27 @@ export const EXAMPLES: Record<string, string> = {
 (move Bear Den)
 (move Rabbit Den)`,
 
+  "Wolf & Sheep (evasion)": `; Sustained evasion across 3 locations, using list ops on beliefs.
+; The Wolf chases the Sheep's REMEMBERED spot — so the Sheep stays safe
+; by always VACATING its own spot (where the Wolf is heading) and the
+; believed Wolf spot. Both deliberate at the same pace → a perpetual
+; chase, the Wolf forever one step behind. Press ▶ Play and watch.
+(location Pasture)
+(location Barn)
+(location Meadow)
+(entity Wolf)
+(entity Sheep)
+(move Wolf Barn)
+(move Sheep Pasture)
+; Sheep: go to a place that is neither the believed Wolf spot nor my own.
+(mind Sheep '(move Self
+  (first (without (without ,(locations) ,(recall Self Wolf))
+                  ,(recall Self Self)))))
+; Wolf: if the Sheep is somewhere other than here, go there; else wait.
+(mind Wolf '(if (member? ,(recall Self Sheep) (without ,(locations) ,(recall Self Self)))
+                (move Self ,(recall Self Sheep))
+                (stay)))`,
+
   "Reducer playground": `; A "thought" resolves one redex per step toward an action term.
 ; Run (step '(...)) repeatedly to watch it, or (reduce '(...)) to finish.
 (step '(move Self (if (= Pasture Pasture) Barn Pasture)))
@@ -96,6 +117,11 @@ export const GLOSSARY: Array<{ syntax: string; desc: string }> = [
   { syntax: "(recall <name> <subject>)", desc: "where <name> believes <subject> is" },
   { syntax: "(mind <name> '<template>)", desc: "give an entity a behavior template" },
   { syntax: "(stay)", desc: "the do-nothing action" },
+  { syntax: "(locations)", desc: "names of every place (a list)" },
+  { syntax: "(list <a> <b> …)", desc: "build a list value" },
+  { syntax: "(first <list>) / (rest …)", desc: "head / tail of a list" },
+  { syntax: "(member? <x> <list>)", desc: "is x in the list?" },
+  { syntax: "(without <list> <x>)", desc: "list with x removed" },
   { syntax: "(tick)", desc: "advance the simulation one step" },
   { syntax: "(run <n>)", desc: "advance the simulation n steps" },
   { syntax: "(clock)", desc: "current tick count" },
