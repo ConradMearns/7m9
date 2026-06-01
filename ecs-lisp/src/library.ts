@@ -30,6 +30,12 @@ export const EXAMPLES: Record<string, string> = {
 (move Bear Den)
 (move Rabbit Den)`,
 
+  "Reducer playground": `; A "thought" resolves one redex per step toward an action term.
+; Run (step '(...)) repeatedly to watch it, or (reduce '(...)) to finish.
+(step '(move Self (if (= Pasture Pasture) Barn Pasture)))
+(reduce '(move Self (if (= Pasture Pasture) Barn Pasture)))
+(reduce '(+ (+ 1 2) (+ 3 4)))`,
+
   "Empty": ``,
 };
 
@@ -47,6 +53,8 @@ export const GLOSSARY: Array<{ syntax: string; desc: string }> = [
   { syntax: "(list)", desc: "snapshot of every entity + its components" },
   { syntax: "'<expr>", desc: "quote: the expression as data, not run" },
   { syntax: "(eval <code>)", desc: "run quoted code-as-data" },
+  { syntax: "(reduce <code>)", desc: "fully resolve a thought (step reducer)" },
+  { syntax: "(step <code>)", desc: "one reduction of a thought (one tick)" },
 ];
 
 /** Short syntax notes shown under the glossary. */

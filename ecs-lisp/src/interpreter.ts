@@ -15,6 +15,7 @@
 
 import type { EntityId, World } from "./ecs";
 import { isSExpr, parse, type SExpr } from "./parser";
+import { normalize, step as reduceOnce } from "./reducer";
 
 export type Value =
   | number
@@ -109,6 +110,11 @@ export class Interpreter {
     return v;
   }
 
+  private asCode(v: Value, who: string): SExpr {
+    if (!isSExpr(v)) throw new Error(`${who} expects quoted code (an s-expression)`);
+    return v;
+  }
+
   private findByName(name: string): EntityId | undefined {
     return this.world.query(NAME).find((id) => this.world.get(id, NAME) === name);
   }
@@ -186,6 +192,12 @@ export class Interpreter {
         }
         return this.eval(code);
       },
+
+      // (reduce '(...)) -> fully resolve a "thought" via the step reducer.
+      // (step '(...))   -> perform a single reduction (one tick of thinking).
+      // Playground hooks onto the pure reducer; the clock (C) will drive these.
+      reduce: (args) => normalize(this.asCode(args[0], "reduce")).expr,
+      step: (args) => reduceOnce(this.asCode(args[0], "step")).expr,
 
       // (get Wolf hp) -> value of a component, or null.
       get: (args) => {
