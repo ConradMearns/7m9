@@ -71,14 +71,16 @@ export const EXAMPLES: Record<string, string> = {
 (recall Wolf Sheep) ; => Barn`,
 
   "Nested minds": `; recursive theory-of-mind, bounded by a depth limit.
-; Wolf models Sheep, who models Wolf, who models Sheep... up to depth 3.
+; Wolf models Sheep, who models Wolf, who models Sheep... up to depth 4.
 (location Pasture)
+(location Barn)
 (entity Wolf)
 (entity Sheep)
-(move Wolf Pasture)
+(move Wolf Barn)
 (move Sheep Pasture)
-(sense Wolf 3)
-(believes Wolf)     ; drill into the nested belief-worlds`,
+(sense Wolf 4)      ; build beliefs 4 levels deep
+(introspect Wolf)   ; "I think you think I think..." as a tree
+(believes Wolf)     ; the same thing as raw nested mini-worlds`,
 
   "Wolf & Sheep": `; sense -> think -> act. Then press ▶ Play (or ⏱ Tick) and watch.
 ; Each acts on what it BELIEVES — ⚠ marks a stale belief in the World pane.
@@ -115,6 +117,7 @@ export const GLOSSARY: Array<{ syntax: string; desc: string }> = [
   { syntax: "(sense <name> <depth?>)", desc: "rebuild an entity's belief mini-world" },
   { syntax: "(believes <name>)", desc: "snapshot of what an entity believes" },
   { syntax: "(recall <name> <subject>)", desc: "where <name> believes <subject> is" },
+  { syntax: "(introspect <name>)", desc: "nested-belief tree (theory of mind)" },
   { syntax: "(mind <name> '<template>)", desc: "give an entity a behavior template" },
   { syntax: "(stay)", desc: "the do-nothing action" },
   { syntax: "(locations)", desc: "names of every place (a list)" },

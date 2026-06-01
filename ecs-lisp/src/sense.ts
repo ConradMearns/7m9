@@ -60,6 +60,32 @@ function findByName(beliefs: World, name: string): EntityId | undefined {
 }
 
 /**
+ * A readable "theory-of-mind" tree of an observer's nested beliefs:
+ * what it believes, what it believes others believe, and so on — bounded by
+ * the depth the beliefs were sensed to. Places are omitted to keep it about agents.
+ */
+export function introspect(world: World, observer: EntityId, indent = ""): string {
+  const beliefs = world.get(observer, BELIEFS);
+  const who = world.get(observer, NAME);
+  const name = typeof who === "string" ? who : `#${observer}`;
+  if (!(beliefs instanceof World)) return `${indent}${name} believes nothing yet`;
+
+  const lines = [`${indent}${name} believes:`];
+  for (const id of beliefs.query(NAME)) {
+    if (beliefs.has(id, PLACE)) continue; // skip places; show agents
+    const subject = beliefs.get(id, NAME);
+    if (typeof subject !== "string" || subject === name) continue; // skip self
+    const at = beliefs.get(id, AT);
+    const loc = typeof at === "number" ? beliefs.get(at, NAME) : null;
+    lines.push(`${indent}  ${subject}${typeof loc === "string" ? ` @ ${loc}` : ""}`);
+    if (beliefs.get(id, BELIEFS) instanceof World) {
+      lines.push(introspect(beliefs, id, indent + "    "));
+    }
+  }
+  return lines.join("\n");
+}
+
+/**
  * Where does `observer` *believe* `subjectName` is? Reads only the observer's
  * belief-world, so it can differ from truth (a stale or absent belief → null).
  */

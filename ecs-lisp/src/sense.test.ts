@@ -51,4 +51,20 @@ describe("sense platform", () => {
     }
     expect(hops).toBe(2); // depth 3 → two further levels carry beliefs, then stop
   });
+
+  test("introspect renders a nested theory-of-mind tree", () => {
+    const w = new World();
+    const lisp = new Interpreter(w);
+    lisp.run("(location Pasture) (location Barn) (entity Wolf) (entity Sheep)");
+    lisp.run("(move Wolf Barn) (move Sheep Pasture)");
+    lisp.run("(sense Wolf 3)");
+    const [tree] = lisp.run("(introspect Wolf)");
+    const text = String(tree);
+    expect(text).toContain("Wolf believes:");
+    expect(text).toContain("Sheep @ Pasture");
+    expect(text).toContain("Sheep believes:"); // it nests
+    expect(text).not.toContain("Pasture believes"); // places are omitted
+    // deeper indentation exists (nested levels)
+    expect(text.split("\n").some((l) => l.startsWith("        "))).toBe(true);
+  });
 });

@@ -17,7 +17,7 @@ import { World, type EntityId } from "./ecs";
 import { isSExpr, parse, type SExpr } from "./parser";
 import { isValue, normalize, step as reduceOnce } from "./reducer";
 import { AT, BELIEFS, MIND, NAME, PLACE, THOUGHT } from "./components";
-import { recall, sense } from "./sense";
+import { introspect, recall, sense } from "./sense";
 
 /** Replace every bare `Self` symbol with the acting entity's name. */
 function substSelf(node: SExpr, name: string): SExpr {
@@ -280,6 +280,9 @@ export class Interpreter {
       // (recall Wolf Sheep) -> where Wolf *believes* Sheep is (may be stale).
       recall: (args) =>
         recall(w, this.require(this.asName(args[0])), this.asName(args[1])),
+
+      // (introspect Wolf) -> readable tree of nested beliefs (theory of mind).
+      introspect: (args) => introspect(w, this.require(this.asName(args[0]))),
 
       // (locations) -> names of every place. Bake into a thought with ,(locations).
       locations: () =>
