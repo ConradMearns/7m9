@@ -13,15 +13,29 @@
 //   (move (entity Bear) Forest)
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { ComponentValue, EntityId, World } from "./ecs";
-import { parse, type SExpr } from "./parser";
+import type { EntityId, World } from "./ecs";
+import { isSExpr, parse, type SExpr } from "./parser";
 
 export type Value =
-  | ComponentValue
+  | number
+  | string
+  | boolean
+  | null
+  | SExpr // quoted code-as-data
   | Value[]
   | { [key: string]: Value };
 
 type Builtin = (args: Value[]) => Value;
+
+/** Re-embed a runtime value as an s-expression literal (for quasiquote splicing). */
+function valueToSExpr(v: Value): SExpr {
+  if (isSExpr(v)) return v; // already code
+  if (typeof v === "number") return { kind: "number", value: v };
+  if (typeof v === "string") return { kind: "string", value: v };
+  if (typeof v === "boolean") return { kind: "symbol", name: v ? "true" : "false" };
+  if (v === null) return { kind: "symbol", name: "nil" };
+  throw new Error(`cannot splice ${JSON.stringify(v)} into a quasiquote`);
+}
 
 // Component-name conventions the interpreter agrees on:
 const NAME = "Name"; // string, the human-facing identifier
@@ -54,12 +68,36 @@ export class Interpreter {
         if (head.kind !== "symbol") {
           throw new Error("the first element of a list must be a command name");
         }
+        // Special forms control whether/how their arguments are evaluated.
+        switch (head.name) {
+          case "quote":
+            return expr.items[1] ?? null; // the AST itself, unevaluated
+          case "quasiquote":
+            return this.quasi(expr.items[1]);
+          case "unquote":
+            throw new Error("unquote used outside of a quasiquote");
+        }
         const fn = this.builtins[head.name];
         if (!fn) throw new Error(`unknown command: "${head.name}"`);
         const args = expr.items.slice(1).map((a) => this.eval(a));
         return fn(args);
       }
     }
+  }
+
+  /**
+   * Build code-as-data from a quasiquote template: everything is literal data
+   * except (unquote e), where `e` is evaluated now and spliced back in. This is
+   * how an entity snapshots a current belief into a thought it resolves later.
+   */
+  private quasi(node: SExpr | undefined): SExpr {
+    if (!node) return { kind: "list", items: [] };
+    if (node.kind !== "list") return node; // atoms are literal
+    const head = node.items[0];
+    if (head?.kind === "symbol" && head.name === "unquote") {
+      return valueToSExpr(this.eval(node.items[1] ?? { kind: "list", items: [] }));
+    }
+    return { kind: "list", items: node.items.map((n) => this.quasi(n)) };
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────
@@ -132,12 +170,21 @@ export class Interpreter {
       },
 
       // (set Wolf hp 10) -> attach an arbitrary component. Generic ECS power.
+      // The value may be quoted code: (set Wolf plan '(move Wolf Forest)).
       set: (args) => {
         const id = this.require(this.asName(args[0]));
         const component = this.asName(args[1]);
-        const value = (args[2] ?? true) as ComponentValue;
-        w.set(id, component, value);
+        w.set(id, component, args[2] ?? true);
         return this.asName(args[0]);
+      },
+
+      // (eval '(...)) -> run code that was stored/quoted as data.
+      eval: (args) => {
+        const code = args[0];
+        if (!isSExpr(code)) {
+          throw new Error("eval expects quoted code (an s-expression)");
+        }
+        return this.eval(code);
       },
 
       // (get Wolf hp) -> value of a component, or null.

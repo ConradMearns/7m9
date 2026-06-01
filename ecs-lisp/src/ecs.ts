@@ -12,8 +12,12 @@
 
 export type EntityId = number;
 
-/** A value that can live in a component. Deliberately permissive. */
-export type ComponentValue = number | string | boolean | EntityId | null;
+/**
+ * A value that can live in a component. The ECS is value-agnostic on purpose —
+ * the interpreter decides what actually flows through (numbers, names, tags,
+ * even quoted code as an SExpr). See `Value` in interpreter.ts.
+ */
+export type ComponentValue = unknown;
 
 export class World {
   private nextId: EntityId = 1;

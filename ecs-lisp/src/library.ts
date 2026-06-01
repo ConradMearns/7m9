@@ -45,6 +45,8 @@ export const GLOSSARY: Array<{ syntax: string; desc: string }> = [
   { syntax: "(get <name> <component>)", desc: "read a component value" },
   { syntax: "(destroy <name>)", desc: "remove an entity entirely" },
   { syntax: "(list)", desc: "snapshot of every entity + its components" },
+  { syntax: "'<expr>", desc: "quote: the expression as data, not run" },
+  { syntax: "(eval <code>)", desc: "run quoted code-as-data" },
 ];
 
 /** Short syntax notes shown under the glossary. */
@@ -53,4 +55,6 @@ export const NOTES: string[] = [
   'Values can be numbers (<code>10</code>) or strings (<code>"on fire"</code>).',
   "Calls <b>nest</b>: <code>(move (entity Bear) Forest)</code>.",
   "<code>; text</code> to end of line is a comment.",
+  "<code>'x</code> is data; <code>(eval 'x)</code> runs it. Store code on an entity: <code>(set Wolf plan '(move Wolf Forest))</code>.",
+  "<code>`(at ,(where Wolf))</code> bakes a current value into otherwise-quoted data.",
 ];

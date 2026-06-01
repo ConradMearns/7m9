@@ -4,7 +4,7 @@
 
 import { World, type EntityId } from "./ecs";
 import { Interpreter, type Value } from "./interpreter";
-import { unparse, parse } from "./parser";
+import { unparse, parse, isSExpr } from "./parser";
 import { DEFAULT_EXAMPLE, EXAMPLES, GLOSSARY, NOTES } from "./library";
 
 const $ = <T extends HTMLElement>(id: string): T => {
@@ -56,7 +56,12 @@ function renderWorld(): void {
     for (const h of homeless) lines.push(`    · ${h}`);
   }
 
-  const json = JSON.stringify(world.snapshot(), null, 2);
+  // Render any quoted code stored in a component as its source, not its AST.
+  const json = JSON.stringify(
+    world.snapshot(),
+    (_key, val) => (isSExpr(val) ? `'${unparse(val)}` : val),
+    2,
+  );
   worldEl.textContent =
     (lines.length ? lines.join("\n") : "(empty world)") +
     "\n\n— raw components —\n" +
@@ -66,6 +71,7 @@ function renderWorld(): void {
 
 function fmt(v: Value): string {
   if (v === null) return "null";
+  if (isSExpr(v)) return `'${unparse(v)}`;
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
 }
