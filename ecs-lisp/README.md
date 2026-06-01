@@ -22,6 +22,9 @@ bun test         # parser + interpreter unit tests
 bun run typecheck
 ```
 
+Or with [just](https://github.com/casey/just): `just` lists recipes —
+`just dev`, `just build`, `just test`, `just check` (typecheck + test + build).
+
 `bun ./index.html` bundles the `<script src="./src/main.ts">` entrypoint on the
 fly; `bun build ./index.html` emits a plain static page you can host anywhere.
 
