@@ -56,12 +56,25 @@ function renderWorld(): void {
     for (const h of homeless) lines.push(`    · ${h}`);
   }
 
+  // Agents: show each minded entity's current thought (the reducer mid-flight).
+  const agents = world.query("Mind");
+  if (agents.length) {
+    lines.push("", "— agents —");
+    for (const a of agents.sort((x, y) => x - y)) {
+      const at = world.get(a, "At");
+      const loc = typeof at === "number" ? nameOf(at) : "nowhere";
+      const thought = world.get(a, "Thought");
+      const status = isSExpr(thought) ? `thinking ${unparse(thought)}` : "idle";
+      lines.push(`◆ ${nameOf(a)} @ ${loc}  —  ${status}`);
+    }
+  }
+
   const json = JSON.stringify(world.snapshot(), jsonReplacer, 2);
   worldEl.textContent =
     (lines.length ? lines.join("\n") : "(empty world)") +
     "\n\n— raw components —\n" +
     json;
-  countEl.textContent = `${world.all().length} entities`;
+  countEl.textContent = `⏱ ${lisp.clock} · ${world.all().length} entities`;
 }
 
 // Render quoted code as its source, and a nested belief-world as its snapshot.
@@ -202,6 +215,16 @@ $("run").addEventListener("click", () => {
   input.focus();
 });
 $("reset").addEventListener("click", reset);
+$("tick").addEventListener("click", () => {
+  try {
+    lisp.run("(tick)");
+    systemLine(`tick ${lisp.clock}`);
+    renderWorld();
+  } catch (e) {
+    addEntry("err", "(tick)", `✗ ${e instanceof Error ? e.message : String(e)}`);
+  }
+  input.focus();
+});
 $("save").addEventListener("click", save);
 $("load").addEventListener("click", load);
 input.addEventListener("keydown", (e) => {

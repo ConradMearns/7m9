@@ -59,6 +59,19 @@ export const EXAMPLES: Record<string, string> = {
 (sense Wolf 3)
 (believes Wolf)     ; drill into the nested belief-worlds`,
 
+  "Wolf & Sheep": `; sense -> think -> act. Press Tick (or run N) and watch.
+; Wolf: go to where it BELIEVES the Sheep is (stale → it chases).
+; Sheep: if it believes the Wolf is at Pasture, flee to Barn, else go Pasture.
+(location Pasture)
+(location Barn)
+(entity Wolf)
+(entity Sheep)
+(move Wolf Barn)
+(move Sheep Pasture)
+(mind Wolf  '(if ,(recall Self Sheep) (move Self ,(recall Self Sheep)) (stay)))
+(mind Sheep '(if (= ,(recall Self Wolf) Pasture) (move Self Barn) (move Self Pasture)))
+(run 4)`,
+
   "Empty": ``,
 };
 
@@ -81,6 +94,11 @@ export const GLOSSARY: Array<{ syntax: string; desc: string }> = [
   { syntax: "(sense <name> <depth?>)", desc: "rebuild an entity's belief mini-world" },
   { syntax: "(believes <name>)", desc: "snapshot of what an entity believes" },
   { syntax: "(recall <name> <subject>)", desc: "where <name> believes <subject> is" },
+  { syntax: "(mind <name> '<template>)", desc: "give an entity a behavior template" },
+  { syntax: "(stay)", desc: "the do-nothing action" },
+  { syntax: "(tick)", desc: "advance the simulation one step" },
+  { syntax: "(run <n>)", desc: "advance the simulation n steps" },
+  { syntax: "(clock)", desc: "current tick count" },
 ];
 
 /** Short syntax notes shown under the glossary. */

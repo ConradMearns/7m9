@@ -15,9 +15,20 @@
 
 import { World, type EntityId } from "./ecs";
 import { isSExpr, parse, type SExpr } from "./parser";
-import { normalize, step as reduceOnce } from "./reducer";
-import { AT, BELIEFS, NAME, PLACE } from "./components";
+import { isValue, normalize, step as reduceOnce } from "./reducer";
+import { AT, BELIEFS, MIND, NAME, PLACE, THOUGHT } from "./components";
 import { recall, sense } from "./sense";
+
+/** Replace every bare `Self` symbol with the acting entity's name. */
+function substSelf(node: SExpr, name: string): SExpr {
+  if (node.kind === "symbol") {
+    return node.name === "Self" ? { kind: "symbol", name } : node;
+  }
+  if (node.kind === "list") {
+    return { kind: "list", items: node.items.map((n) => substSelf(n, name)) };
+  }
+  return node;
+}
 
 export type Value =
   | number
@@ -43,6 +54,8 @@ function valueToSExpr(v: Value): SExpr {
 
 export class Interpreter {
   readonly builtins: Record<string, Builtin>;
+  /** Simulation clock — number of ticks elapsed. */
+  clock = 0;
 
   constructor(public readonly world: World) {
     this.builtins = this.makeBuiltins();
@@ -97,6 +110,56 @@ export class Interpreter {
       return valueToSExpr(this.eval(node.items[1] ?? { kind: "list", items: [] }));
     }
     return { kind: "list", items: node.items.map((n) => this.quasi(n)) };
+  }
+
+  // ── the agent loop: sense → think → act ──────────────────────────────────────
+
+  /**
+   * Instantiate a fresh thought for an entity from its Mind template: bind Self
+   * to the entity's name, then bake its current beliefs in (the `,unquote` parts
+   * are evaluated against its belief-world; everything else stays as data). The
+   * result is a self-contained thought the reducer can resolve over later ticks.
+   */
+  private instantiate(entity: EntityId): SExpr {
+    const template = this.world.get(entity, MIND);
+    if (!isSExpr(template)) throw new Error("entity has no Mind to think with");
+    const name = this.world.get(entity, NAME);
+    if (typeof name !== "string") throw new Error("a thinking entity needs a Name");
+    return this.quasi(substSelf(template, name));
+  }
+
+  /**
+   * Advance the simulation one tick, in phases so moves resolve "simultaneously":
+   *   SENSE  — refresh every minded entity's beliefs from the world
+   *   THINK  — start a thought if idle, then reduce each thought by one step
+   *   ACT    — any thought now in normal form is an action term; apply it
+   * Because thoughts snapshot beliefs when they start and act all-at-once, an
+   * agent acts on a possibly-stale view — which is what makes the chase emerge.
+   */
+  private doTick(): void {
+    const minded = this.world.query(MIND);
+
+    for (const e of minded) sense(this.world, e);
+
+    for (const e of minded) {
+      if (!isSExpr(this.world.get(e, THOUGHT))) {
+        this.world.set(e, THOUGHT, this.instantiate(e));
+      }
+      const thought = this.world.get(e, THOUGHT) as SExpr;
+      this.world.set(e, THOUGHT, reduceOnce(thought).expr);
+    }
+
+    const actions: Array<[EntityId, SExpr]> = [];
+    for (const e of minded) {
+      const thought = this.world.get(e, THOUGHT);
+      if (isSExpr(thought) && isValue(thought)) {
+        this.world.unset(e, THOUGHT);
+        actions.push([e, thought]);
+      }
+    }
+    for (const [, action] of actions) this.eval(action); // apply as a command
+
+    this.clock += 1;
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────
@@ -216,6 +279,31 @@ export class Interpreter {
       // (recall Wolf Sheep) -> where Wolf *believes* Sheep is (may be stale).
       recall: (args) =>
         recall(w, this.require(this.asName(args[0])), this.asName(args[1])),
+
+      // (mind Sheep '(if (= ,(recall Self Wolf) Pasture) (move Self Barn) ...))
+      // Store a behavior template. `Self` binds to the entity; `,perception`
+      // bakes a belief at think-start; the rest stays as data to reduce.
+      mind: (args) => {
+        const id = this.require(this.asName(args[0]));
+        if (!isSExpr(args[1])) throw new Error("mind expects a quoted template");
+        w.set(id, MIND, args[1]);
+        return this.asName(args[0]);
+      },
+
+      // (stay) -> the do-nothing action.
+      stay: () => null,
+
+      // (tick) / (run 10) -> advance the sense→think→act loop. (clock) -> now.
+      tick: () => {
+        this.doTick();
+        return this.clock;
+      },
+      run: (args) => {
+        const n = typeof args[0] === "number" ? Math.min(args[0], 1000) : 1;
+        for (let i = 0; i < n; i++) this.doTick();
+        return this.clock;
+      },
+      clock: () => this.clock,
 
       // (get Wolf hp) -> value of a component, or null.
       get: (args) => {
