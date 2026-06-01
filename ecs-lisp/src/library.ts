@@ -59,8 +59,9 @@ export const EXAMPLES: Record<string, string> = {
 (sense Wolf 3)
 (believes Wolf)     ; drill into the nested belief-worlds`,
 
-  "Wolf & Sheep": `; sense -> think -> act. Press Tick (or run N) and watch.
-; Wolf: go to where it BELIEVES the Sheep is (stale → it chases).
+  "Wolf & Sheep": `; sense -> think -> act. Then press ▶ Play (or ⏱ Tick) and watch.
+; Each acts on what it BELIEVES — ⚠ marks a stale belief in the World pane.
+; Wolf: go to where it believes the Sheep is (lags → it chases).
 ; Sheep: if it believes the Wolf is at Pasture, flee to Barn, else go Pasture.
 (location Pasture)
 (location Barn)
@@ -69,8 +70,7 @@ export const EXAMPLES: Record<string, string> = {
 (move Wolf Barn)
 (move Sheep Pasture)
 (mind Wolf  '(if ,(recall Self Sheep) (move Self ,(recall Self Sheep)) (stay)))
-(mind Sheep '(if (= ,(recall Self Wolf) Pasture) (move Self Barn) (move Self Pasture)))
-(run 4)`,
+(mind Sheep '(if (= ,(recall Self Wolf) Pasture) (move Self Barn) (move Self Pasture)))`,
 
   "Empty": ``,
 };
