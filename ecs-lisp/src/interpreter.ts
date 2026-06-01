@@ -13,9 +13,11 @@
 //   (move (entity Bear) Forest)
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { EntityId, World } from "./ecs";
+import { World, type EntityId } from "./ecs";
 import { isSExpr, parse, type SExpr } from "./parser";
 import { normalize, step as reduceOnce } from "./reducer";
+import { AT, BELIEFS, NAME, PLACE } from "./components";
+import { recall, sense } from "./sense";
 
 export type Value =
   | number
@@ -38,10 +40,6 @@ function valueToSExpr(v: Value): SExpr {
   throw new Error(`cannot splice ${JSON.stringify(v)} into a quasiquote`);
 }
 
-// Component-name conventions the interpreter agrees on:
-const NAME = "Name"; // string, the human-facing identifier
-const PLACE = "Place"; // tag (true) marking an entity as a location
-const AT = "At"; // EntityId, the location an entity is currently in
 
 export class Interpreter {
   readonly builtins: Record<string, Builtin>;
@@ -198,6 +196,26 @@ export class Interpreter {
       // Playground hooks onto the pure reducer; the clock (C) will drive these.
       reduce: (args) => normalize(this.asCode(args[0], "reduce")).expr,
       step: (args) => reduceOnce(this.asCode(args[0], "step")).expr,
+
+      // (sense Wolf)   -> rebuild Wolf's belief mini-world from what it perceives.
+      // (sense Wolf 3) -> also model others' beliefs, nested up to depth 3.
+      sense: (args) => {
+        const id = this.require(this.asName(args[0]));
+        const depth = typeof args[1] === "number" ? args[1] : 1;
+        sense(w, id, depth);
+        return this.asName(args[0]);
+      },
+
+      // (believes Wolf) -> snapshot of Wolf's belief mini-world.
+      believes: (args) => {
+        const id = this.require(this.asName(args[0]));
+        const beliefs = w.get(id, BELIEFS);
+        return beliefs instanceof World ? (beliefs.snapshot() as unknown as Value) : null;
+      },
+
+      // (recall Wolf Sheep) -> where Wolf *believes* Sheep is (may be stale).
+      recall: (args) =>
+        recall(w, this.require(this.asName(args[0])), this.asName(args[1])),
 
       // (get Wolf hp) -> value of a component, or null.
       get: (args) => {

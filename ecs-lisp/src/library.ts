@@ -36,6 +36,29 @@ export const EXAMPLES: Record<string, string> = {
 (reduce '(move Self (if (= Pasture Pasture) Barn Pasture)))
 (reduce '(+ (+ 1 2) (+ 3 4)))`,
 
+  "Belief vs truth": `; an entity acts on what it BELIEVES, not on global truth.
+(location Pasture)
+(location Barn)
+(entity Wolf)
+(entity Sheep)
+(move Sheep Pasture)
+(sense Wolf)        ; Wolf looks: now believes Sheep is at Pasture
+(move Sheep Barn)   ; Sheep slips away; Wolf hasn't looked again
+(recall Wolf Sheep) ; => Pasture  (stale belief!)
+(where Sheep)       ; => Barn     (the truth)
+(sense Wolf)        ; Wolf looks again
+(recall Wolf Sheep) ; => Barn`,
+
+  "Nested minds": `; recursive theory-of-mind, bounded by a depth limit.
+; Wolf models Sheep, who models Wolf, who models Sheep... up to depth 3.
+(location Pasture)
+(entity Wolf)
+(entity Sheep)
+(move Wolf Pasture)
+(move Sheep Pasture)
+(sense Wolf 3)
+(believes Wolf)     ; drill into the nested belief-worlds`,
+
   "Empty": ``,
 };
 
@@ -55,6 +78,9 @@ export const GLOSSARY: Array<{ syntax: string; desc: string }> = [
   { syntax: "(eval <code>)", desc: "run quoted code-as-data" },
   { syntax: "(reduce <code>)", desc: "fully resolve a thought (step reducer)" },
   { syntax: "(step <code>)", desc: "one reduction of a thought (one tick)" },
+  { syntax: "(sense <name> <depth?>)", desc: "rebuild an entity's belief mini-world" },
+  { syntax: "(believes <name>)", desc: "snapshot of what an entity believes" },
+  { syntax: "(recall <name> <subject>)", desc: "where <name> believes <subject> is" },
 ];
 
 /** Short syntax notes shown under the glossary. */

@@ -56,12 +56,7 @@ function renderWorld(): void {
     for (const h of homeless) lines.push(`    · ${h}`);
   }
 
-  // Render any quoted code stored in a component as its source, not its AST.
-  const json = JSON.stringify(
-    world.snapshot(),
-    (_key, val) => (isSExpr(val) ? `'${unparse(val)}` : val),
-    2,
-  );
+  const json = JSON.stringify(world.snapshot(), jsonReplacer, 2);
   worldEl.textContent =
     (lines.length ? lines.join("\n") : "(empty world)") +
     "\n\n— raw components —\n" +
@@ -69,10 +64,17 @@ function renderWorld(): void {
   countEl.textContent = `${world.all().length} entities`;
 }
 
+// Render quoted code as its source, and a nested belief-world as its snapshot.
+function jsonReplacer(_key: string, val: unknown): unknown {
+  if (val instanceof World) return val.snapshot();
+  if (isSExpr(val)) return `'${unparse(val)}`;
+  return val;
+}
+
 function fmt(v: Value): string {
   if (v === null) return "null";
   if (isSExpr(v)) return `'${unparse(v)}`;
-  if (typeof v === "object") return JSON.stringify(v);
+  if (typeof v === "object") return JSON.stringify(v, jsonReplacer);
   return String(v);
 }
 
